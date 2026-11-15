@@ -139,7 +139,7 @@ export class AudioEngine {
     const t = this.ctx.currentTime;
     const p = car.p;
     const rpm = car.rpm;
-    const cyl = car.p.body.id === 'hatch' ? 4 : car.p.body.id === 'proto' ? 8 : 6;
+    const cyl = car.p.body.cyl || 6;
     const fire = (rpm / 60) * (cyl / 2);
     const load = clamp(car.throttle, 0, 1);
     const cut = car.revCut ? 0.25 : 1;

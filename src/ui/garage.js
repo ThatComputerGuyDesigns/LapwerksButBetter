@@ -173,11 +173,11 @@ export class Garage {
     if (this.tab === 'car') {
       body.innerHTML = `<div class="body-cards">${Object.values(BODIES).map((b) => `
         <button class="body-card ${s.body === b.id ? 'on' : ''}" data-body="${b.id}">
-          <b>${b.name}</b><span>${b.drivetrain} · ${Math.round(b.powerKW * 1.341)} hp · ${b.mass} kg</span><small>${b.blurb}</small>
+          <em>${b.cls}</em><b>${b.name}</b><span>${b.drivetrain} · ${Math.round(b.powerKW * 1.341)} hp · ${b.mass} kg</span><small>${b.blurb}</small>
         </button>`).join('')}</div>
         <div class="field"><span>Tyres</span><div class="seg small">${Object.values(COMPOUNDS).map((c) => `<button data-compound="${c.id}" class="${s.compound === c.id ? 'on' : ''}">${c.name}</button>`).join('')}</div></div>
         <div class="field"><span>Drivetrain</span><div class="seg small">${['RWD', 'AWD', 'FWD'].map((d) => `<button data-drive="${d}" class="${(s.drivetrain || BODIES[s.body].drivetrain) === d ? 'on' : ''}">${d}</button>`).join('')}</div></div>`;
-      body.querySelectorAll('[data-body]').forEach((b) => b.addEventListener('click', () => { audio.click(); this.change({ body: b.dataset.body, drivetrain: null }); this.renderTab(); }));
+      body.querySelectorAll('[data-body]').forEach((b) => b.addEventListener('click', () => { audio.click(); this.change({ body: b.dataset.body, drivetrain: null, compound: BODIES[b.dataset.body].compound }); this.renderTab(); }));
       body.querySelectorAll('[data-compound]').forEach((b) => b.addEventListener('click', () => { audio.click(); this.change({ compound: b.dataset.compound }, false); this.renderTab(); }));
       body.querySelectorAll('[data-drive]').forEach((b) => b.addEventListener('click', () => { audio.click(); this.change({ drivetrain: b.dataset.drive === BODIES[s.body].drivetrain ? null : b.dataset.drive }, false); this.renderTab(); }));
     } else if (this.tab === 'paint') {
@@ -236,11 +236,11 @@ export class Garage {
     const st = performanceStats(this.setup);
     const bar = (label, val, frac, unit = '') => `<div class="stat"><div class="sl"><span>${label}</span><b>${val}${unit}</b></div><div class="sb"><i style="width:${clamp(frac, 0.04, 1) * 100}%"></i></div></div>`;
     this.root.querySelector('.stats').innerHTML =
-      bar('Power', Math.round(st.powerKW * 1.341), st.powerKW / 600, ' hp') +
-      bar('Weight', Math.round(st.mass), (1500 - st.mass) / 700, ' kg') +
+      bar('Power', Math.round(st.powerKW * 1.341), st.powerKW / 900, ' hp') +
+      bar('Weight', Math.round(st.mass), (1800 - st.mass) / 1000, ' kg') +
       bar('0–100 km/h', st.t100 ? st.t100.toFixed(1) : '—', st.t100 ? (8 - st.t100) / 6 : 0, ' s') +
-      bar('Top speed', Math.round(st.vmax), (st.vmax - 150) / 200, ' km/h') +
-      bar('Cornering', st.latG.toFixed(2), (st.latG - 0.8) / 1.6, ' g');
+      bar('Top speed', Math.round(st.vmax), (st.vmax - 180) / 220, ' km/h') +
+      bar('Cornering', st.latG.toFixed(2), (st.latG - 0.8) / 2.6, ' g');
   }
 
   update(dt) {

@@ -8,9 +8,9 @@ import { Vehicle, ASSIST_PRESETS } from '../src/physics/vehicle.js';
 import { AIDriver } from '../src/physics/driver.js';
 import { clamp, formatTime } from '../src/core/math.js';
 
-export function keyLap(preset, assist = 'sport', pace = 0.9) {
+export function keyLap(preset, assist = 'sport', pace = 0.9, setup = {}) {
   const T = buildTrack(preset);
-  const p = makeCarParams({});
+  const p = makeCarParams(setup);
   const line = computeRacingLine(T);
   const prof = speedProfile(T, line, p);
   const car = new Vehicle(p, T);
@@ -33,7 +33,7 @@ export function keyLap(preset, assist = 'sport', pace = 0.9) {
     const up = phase < w.throttle * 1.1 && w.throttle > 0.15, down = w.brake > 0.2;
     let target = (left ? 1 : 0) - (right ? 1 : 0);
     if (process.env.ANALOG_STEER) target = w.steer;
-    const RI = +(process.env.RI ?? 5.2), RO = +(process.env.RO ?? 7.5), RV = +(process.env.RV ?? 28), ROV = +(process.env.ROV ?? 1e9);
+    const RI = +(process.env.RI ?? 9), RO = +(process.env.RO ?? 10), RV = +(process.env.RV ?? 45), ROV = +(process.env.ROV ?? 1e9);
     const rate = target === 0 || Math.sign(target) !== Math.sign(st.s) ? RO / (1 + car.speed / ROV) : RI / (1 + car.speed / RV);
     st.s += clamp(target - st.s, -rate * dt, rate * dt);
     st.thr += clamp((up ? 1 : 0) - st.thr, -dt * 9, dt * 7);

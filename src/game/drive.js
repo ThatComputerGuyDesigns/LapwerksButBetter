@@ -315,11 +315,18 @@ export class DriveSession {
     const velDir = new THREE.Vector3(fwd.x * car.u + Math.cos(car.heading) * car.v, 0, fwd.z * car.u - Math.sin(car.heading) * car.v);
     if (velDir.lengthSq() > 4) velDir.normalize(); else velDir.copy(fwd);
     // chase cams look along a blend of heading and velocity (shows slides)
-    const dir = fwd.clone().lerp(velDir, 0.35).normalize();
+    // camera yaw follows the car's heading with a short lag (no sideways
+    // positional swing — that is what made the car feel like a boat), and
+    // leans a little toward the direction of travel when sliding
+    const slideYaw = Math.atan2(velDir.x, velDir.z);
+    const wantYaw = car.heading + angleWrap(slideYaw - car.heading) * 0.22;
+    if (this.camYaw == null || !this.camInit) this.camYaw = wantYaw;
+    this.camYaw += angleWrap(wantYaw - this.camYaw) * damp(9, dt);
+    const dir = new THREE.Vector3(Math.sin(this.camYaw), 0, Math.cos(this.camYaw));
     switch (this.camMode) {
       case 'near': {
-        desiredPos = carPos.clone().addScaledVector(dir, -5.4).add(new THREE.Vector3(0, 1.75, 0));
-        look = carPos.clone().addScaledVector(fwd, 2.5).add(new THREE.Vector3(0, 0.9, 0));
+        desiredPos = carPos.clone().addScaledVector(dir, -4.9).add(new THREE.Vector3(0, 1.55, 0));
+        look = carPos.clone().addScaledVector(dir, 3).add(new THREE.Vector3(0, 0.85, 0));
         fov = 62 + clamp(spd / 80, 0, 1) * 10;
         break;
       }
@@ -346,8 +353,8 @@ export class DriveSession {
         break;
       }
       default: {
-        desiredPos = carPos.clone().addScaledVector(dir, -7.6 - clamp(spd / 70, 0, 1) * 1.2).add(new THREE.Vector3(0, 2.45, 0));
-        look = carPos.clone().addScaledVector(fwd, 3.5).add(new THREE.Vector3(0, 1.0, 0));
+        desiredPos = carPos.clone().addScaledVector(dir, -6.6 - clamp(spd / 70, 0, 1) * 0.9).add(new THREE.Vector3(0, 2.05, 0));
+        look = carPos.clone().addScaledVector(dir, 4).add(new THREE.Vector3(0, 0.95, 0));
         fov = 58 + clamp(spd / 80, 0, 1) * 12;
       }
     }
@@ -368,8 +375,8 @@ export class DriveSession {
       this.camLook.copy(look);
       this.camInit = true;
     } else {
-      this.camPos.lerp(desiredPos, damp(this.mode === 'attract' ? 2.5 : 7.5, dt));
-      this.camLook.lerp(look, damp(14, dt));
+      this.camPos.lerp(desiredPos, damp(this.mode === 'attract' ? 2.5 : 22, dt));
+      this.camLook.lerp(look, damp(this.mode === 'attract' ? 6 : 30, dt));
     }
     cam.position.copy(this.camPos);
     // subtle shake on kerbs / gravel and at speed

@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { BODIES } from '../physics/carSetup.js';
 import { liveryTexture } from '../world/textures.js';
+import { createFormula } from './formulaModel.js';
 import { clamp, lerp, smoothstep } from '../core/math.js';
 
 // keyframe profiles: [t, halfWidthFactor, belt (top of lower body, m)]
@@ -26,6 +27,43 @@ const PROFILES = {
     body: [[0, 0.95, 0.8], [0.06, 1.0, 0.86], [0.2, 1.0, 0.82], [0.38, 0.9, 0.72], [0.55, 0.88, 0.66], [0.72, 0.98, 0.7], [0.84, 0.98, 0.66], [0.94, 0.9, 0.48], [1, 0.75, 0.32]],
     cabin: { t0: 0.36, t1: 0.74, roof: 1.08, peakA: 0.46, peakB: 0.56, baseW: 0.55, topW: 0.38, roofPaint: false },
     wing: 'big',
+  },
+  // rear-engined flat-six sports car: long sloping roof, wide hips, round lamps
+  rs: {
+    frontOH: 0.92, rearOH: 1.15, clearance: 0.12, n: 3.0, hips: 0.09, lights: 'round',
+    body: [[0, 0.84, 0.8], [0.06, 0.94, 0.86], [0.18, 1.0, 0.86], [0.32, 0.97, 0.84], [0.5, 0.93, 0.82], [0.66, 0.95, 0.78], [0.8, 0.98, 0.74], [0.92, 0.9, 0.62], [1, 0.72, 0.5]],
+    cabin: { t0: 0.06, t1: 0.66, roof: 1.28, peakA: 0.46, peakB: 0.52, baseW: 0.82, topW: 0.6, roofPaint: true },
+    wing: 'duck',
+  },
+  gt3: {
+    frontOH: 1.0, rearOH: 1.15, clearance: 0.08, n: 2.9, hips: 0.14, lights: 'round',
+    body: [[0, 0.88, 0.8], [0.06, 0.98, 0.86], [0.18, 1.0, 0.86], [0.32, 0.95, 0.84], [0.5, 0.9, 0.82], [0.66, 0.95, 0.78], [0.8, 1.0, 0.74], [0.92, 0.93, 0.6], [1, 0.76, 0.42]],
+    cabin: { t0: 0.06, t1: 0.66, roof: 1.25, peakA: 0.46, peakB: 0.52, baseW: 0.78, topW: 0.56, roofPaint: true },
+    wing: 'swan', splitter: 1.4,
+  },
+  hyper: {
+    frontOH: 1.05, rearOH: 0.9, clearance: 0.08, n: 2.6, hips: 0.1,
+    body: [[0, 0.92, 0.82], [0.06, 1.0, 0.9], [0.2, 1.0, 0.86], [0.36, 0.86, 0.74], [0.5, 0.84, 0.7], [0.64, 0.94, 0.72], [0.8, 0.98, 0.66], [0.93, 0.9, 0.5], [1, 0.72, 0.36]],
+    cabin: { t0: 0.3, t1: 0.74, roof: 1.15, peakA: 0.44, peakB: 0.55, baseW: 0.64, topW: 0.45, roofPaint: true },
+    wing: 'big', splitter: 1.2,
+  },
+  muscle: {
+    frontOH: 1.0, rearOH: 1.05, clearance: 0.15, n: 5.5, hips: 0.03, lights: 'round',
+    body: [[0, 0.95, 0.9], [0.05, 0.99, 0.94], [0.2, 1.0, 0.95], [0.4, 1.0, 0.94], [0.6, 1.0, 0.93], [0.8, 0.99, 0.92], [0.94, 0.98, 0.88], [1, 0.94, 0.74]],
+    cabin: { t0: 0.18, t1: 0.6, roof: 1.33, peakA: 0.4, peakB: 0.48, baseW: 0.86, topW: 0.7, roofPaint: true },
+    wing: 'lip', stripes: true,
+  },
+  jdm: {
+    frontOH: 0.86, rearOH: 0.82, clearance: 0.12, n: 3.6,
+    body: [[0, 0.9, 0.82], [0.06, 0.97, 0.88], [0.2, 1.0, 0.88], [0.4, 0.98, 0.85], [0.6, 0.97, 0.82], [0.8, 0.98, 0.76], [0.93, 0.93, 0.66], [1, 0.8, 0.52]],
+    cabin: { t0: 0.17, t1: 0.66, roof: 1.3, peakA: 0.3, peakB: 0.48, baseW: 0.85, topW: 0.66, roofPaint: true },
+    wing: 'gtwing',
+  },
+  rally: {
+    frontOH: 0.82, rearOH: 0.72, clearance: 0.2, n: 3.8, hips: 0.06,
+    body: [[0, 0.9, 0.88], [0.05, 0.98, 0.96], [0.2, 1.0, 0.97], [0.45, 0.98, 0.95], [0.62, 0.97, 0.9], [0.8, 0.97, 0.84], [0.93, 0.93, 0.76], [1, 0.82, 0.6]],
+    cabin: { t0: 0.04, t1: 0.66, roof: 1.42, peakA: 0.1, peakB: 0.44, baseW: 0.88, topW: 0.7, roofPaint: true },
+    wing: 'roof', scoop: true, flaps: true,
   },
 };
 
@@ -49,7 +87,8 @@ const spow = (v, e) => Math.sign(v) * Math.pow(Math.abs(v), e);
 
 export function createCar(setup) {
   const B = BODIES[setup.body] || BODIES.gt;
-  const P = PROFILES[B.id];
+  if (B.model === 'formula') return createFormula(setup, B);
+  const P = PROFILES[B.model] || PROFILES.gt;
   const a = B.wheelbase * (1 - B.weightFront); // CG → front axle
   const b = B.wheelbase * B.weightFront; // CG → rear axle
   const zF = a + P.frontOH, zR = -b - P.rearOH;
@@ -84,7 +123,7 @@ export function createCar(setup) {
   // ---------------- lofted lower body
   const halfW = (t) => {
     let w = interp(P.body, t, 1) * W2;
-    for (const az of axles) w += 0.045 * W2 * Math.exp(-(((zOf(t) - az) / 0.55) ** 2)); // fender bulge
+    for (const az of axles) w += (az < 0 ? 0.045 + (P.hips || 0) : 0.045) * W2 * Math.exp(-(((zOf(t) - az) / (az < 0 ? 0.7 : 0.55)) ** 2)); // fender bulges / hips
     return w;
   };
   const belt = (t) => interp(P.body, t, 2);
@@ -160,8 +199,9 @@ export function createCar(setup) {
   for (const sx of [1, -1]) {
     const tH = 0.955;
     sectionPt(tH, sx > 0 ? 0.45 : Math.PI - 0.45, tmp);
-    const hl = new THREE.Mesh(new THREE.CapsuleGeometry(0.05, 0.3, 6, 12), headMat);
-    hl.rotation.z = Math.PI / 2;
+    const round = P.lights === 'round';
+    const hl = new THREE.Mesh(round ? new THREE.SphereGeometry(0.105, 20, 14) : new THREE.CapsuleGeometry(0.05, 0.3, 6, 12), headMat);
+    if (round) { hl.scale.set(1, 1, 0.55); } else { hl.rotation.z = Math.PI / 2; }
     hl.rotation.y = sx * 0.35;
     hl.position.copy(tmp).add(new THREE.Vector3(-sx * 0.04, 0.0, 0.02));
     body.add(hl);
@@ -187,7 +227,7 @@ export function createCar(setup) {
 
   // ---------------- aero and trim
   {
-    const spl = new THREE.Mesh(new THREE.BoxGeometry(halfW(0.95) * 1.7, 0.02, 0.22), carbonMat);
+    const spl = new THREE.Mesh(new THREE.BoxGeometry(halfW(0.95) * 1.7 * Math.min(P.splitter || 1, 1.15), 0.02, 0.22 * (P.splitter || 1)), carbonMat);
     spl.position.set(0, P.clearance - 0.01, zF - 0.24);
     body.add(spl);
     const grille = new THREE.Mesh(new THREE.BoxGeometry(halfW(0.98) * 1.1, 0.12, 0.05), blackMat);
@@ -211,7 +251,7 @@ export function createCar(setup) {
       sk.position.set(sx * (W2 * 0.94), P.clearance + 0.04, (a - b) / 2);
       body.add(sk);
       // mirrors
-      const tm = C.t0 + (C.t1 - C.t0) * (B.id === 'proto' ? 0.62 : 0.78);
+      const tm = C.t0 + (C.t1 - C.t0) * (B.model === 'proto' || B.model === 'hyper' ? 0.62 : 0.78);
       const mirror = new THREE.Group();
       const stalk = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, 0.04), blackMat);
       stalk.position.x = sx * 0.06;
@@ -244,6 +284,41 @@ export function createCar(setup) {
         wing.add(py);
       }
       wing.position.set(0, belt(0.06) + 0.38, zR + 0.32);
+    } else if (P.wing === 'swan') {
+      // GT3 swan-neck wing: wide blade hung from above
+      const prof = new THREE.Shape();
+      prof.moveTo(0, 0); prof.bezierCurveTo(0.08, 0.06, 0.28, 0.05, 0.42, 0.0); prof.bezierCurveTo(0.28, 0.014, 0.08, -0.01, 0, 0);
+      const wg = new THREE.ExtrudeGeometry(prof, { depth: W2 * 1.9, bevelEnabled: false });
+      wg.translate(-0.21, 0, -W2 * 0.95);
+      wg.rotateY(Math.PI / 2);
+      wing.add(new THREE.Mesh(wg, carbonMat));
+      for (const sx of [1, -1]) {
+        const ep = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.3, 0.52), carbonMat);
+        ep.position.set(sx * W2 * 0.95, -0.05, 0);
+        wing.add(ep);
+        const neck = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.018, 6, 16, Math.PI * 0.8), carbonMat);
+        neck.rotation.y = Math.PI / 2;
+        neck.position.set(sx * 0.32, -0.16, -0.02);
+        wing.add(neck);
+      }
+      wing.position.set(0, belt(0.06) + 0.42, zR + 0.38);
+    } else if (P.wing === 'duck') {
+      const duck = new THREE.Mesh(new THREE.BoxGeometry(W2 * 1.45, 0.05, 0.26), paintMat);
+      duck.position.set(0, 0.0, 0);
+      wing.add(duck);
+      wing.position.set(0, belt(0.05) + 0.05, zR + 0.32);
+    } else if (P.wing === 'gtwing') {
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(W2 * 1.7, 0.03, 0.26), carbonMat);
+      wing.add(blade);
+      for (const sx of [1, -1]) {
+        const st = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.2, 0.1), carbonMat);
+        st.position.set(sx * 0.45, -0.1, 0);
+        wing.add(st);
+        const ep = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.12, 0.3), carbonMat);
+        ep.position.set(sx * W2 * 0.85, 0, 0);
+        wing.add(ep);
+      }
+      wing.position.set(0, belt(0.04) + 0.2, zR + 0.2);
     } else if (P.wing === 'lip') {
       const lip = new THREE.Mesh(new THREE.BoxGeometry(W2 * 1.5, 0.03, 0.16), carbonMat);
       lip.position.set(0, 0.0, 0);
@@ -256,6 +331,18 @@ export function createCar(setup) {
     }
     wing.rotation.x = -0.08 - (setup.downforce ?? 0.5) * 0.18;
     body.add(wing);
+    if (P.scoop) {
+      const sc = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.08, 0.35), accentMat);
+      sc.position.set(0, C.roof + 0.03, zOf((C.t0 + C.t1) / 2 + 0.12));
+      body.add(sc);
+    }
+    if (P.flaps) {
+      for (const sx of [1, -1]) for (const az of axles) {
+        const flap = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.24, 0.012), new THREE.MeshStandardMaterial({ color: 0x1a1c20, roughness: 0.8 }));
+        flap.position.set(sx * (B.trackR / 2), 0.2, az - archR - 0.02);
+        body.add(flap);
+      }
+    }
   }
 
   // ---------------- wheels
@@ -263,9 +350,9 @@ export function createCar(setup) {
   const wheelPositions = [
     [B.trackF / 2, a], [-B.trackF / 2, a], [B.trackR / 2, -b], [-B.trackR / 2, -b],
   ];
-  const tyreWidth = B.id === 'hatch' ? 0.225 : 0.275;
-  const wheelTemplate = buildWheel(wheelR, tyreWidth, setup.rim || '#c9ccd1', B.id);
-  const caliperMat = new THREE.MeshStandardMaterial({ color: B.id === 'proto' ? 0xffc21a : 0xd4202a, roughness: 0.35, metalness: 0.3 });
+  const tyreWidth = B.model === 'hatch' || B.model === 'jdm' ? 0.225 : B.model === 'gt3' || B.model === 'hyper' || B.model === 'proto' ? 0.31 : 0.275;
+  const wheelTemplate = buildWheel(wheelR, tyreWidth, setup.rim || '#c9ccd1', B.model);
+  const caliperMat = new THREE.MeshStandardMaterial({ color: B.model === 'proto' || B.model === 'hyper' ? 0xffc21a : 0xd4202a, roughness: 0.35, metalness: 0.3 });
   wheelPositions.forEach(([x, z], i) => {
     const steer = new THREE.Group();
     steer.position.set(x, wheelR, z);
@@ -298,34 +385,7 @@ export function createCar(setup) {
     if (o.isMesh && o !== blob) { o.castShadow = true; o.receiveShadow = true; }
   });
 
-  const state = { roll: 0, pitch: 0, heave: 0 };
-  root.userData = {
-    body, wheels, tailMat, revMat, headMat, paintMat, length: zF - zR, width: W2 * 2, zF, zR, wheelR, state,
-    /** Apply the physics state to the visual model. */
-    sync(car, dt) {
-      const p = car.p;
-      // suspension feel: pitch under accel/brake, roll in corners
-      const targetPitch = clamp(-car.ax * 0.0042, -0.045, 0.045);
-      const targetRoll = clamp(-car.ay * 0.0055, -0.06, 0.06);
-      const k = 1 - Math.exp(-dt * 9);
-      state.pitch += (targetPitch - state.pitch) * k;
-      state.roll += (targetRoll - state.roll) * k;
-      let heave = 0;
-      if (car.surface === 1) heave = Math.sin(car.time * 70) * 0.008;
-      if (car.surface === 3) heave = Math.sin(car.time * 43) * 0.012;
-      state.heave += (heave - state.heave) * 0.5;
-      body.rotation.set(state.pitch, 0, state.roll);
-      body.position.y = state.heave;
-      for (let i = 0; i < 4; i++) {
-        const w = car.wheels[i];
-        wheels[i].steer.rotation.y = w.steer;
-        wheels[i].spin.rotation.x = w.spin;
-      }
-      tailMat.emissiveIntensity = car.brake > 0.05 ? 5.5 : 0.9;
-      revMat.emissiveIntensity = car.gear === -1 ? 3 : 0;
-      void p;
-    },
-  };
+  root.userData = { body, wheels, tailMat, revMat, headMat, paintMat, length: zF - zR, width: W2 * 2, zF, zR, wheelR, sync: makeSync(body, wheels, tailMat, revMat) };
   return root;
 }
 
@@ -333,7 +393,7 @@ export function createCar(setup) {
  * Loft a closed tube through cross-sections. fn(t, theta, out) gives points.
  * Caps close both ends with rounded nose rings.
  */
-function lofted(fn, segL, segR, material, opts) {
+export function lofted(fn, segL, segR, material, opts) {
   const pos = [], uv = [], idx = [];
   const v = new THREE.Vector3();
   const rows = [];
@@ -392,7 +452,7 @@ function lofted(fn, segL, segR, material, opts) {
   return new THREE.Mesh(geo, material);
 }
 
-function buildWheel(R, width, rimColor, style) {
+export function buildWheel(R, width, rimColor, style) {
   const g = new THREE.Group();
   // tyre: lathe a rounded section around the X axis
   const rimR = R * 0.7;
@@ -450,6 +510,32 @@ function buildWheel(R, width, rimColor, style) {
   disc.position.x = -0.02;
   g.add(disc);
   return g;
+}
+
+/** Shared visual suspension + wheel/lights sync for every car model. */
+export function makeSync(body, wheels, tailMat, revMat) {
+  const state = { roll: 0, pitch: 0, heave: 0 };
+  return (car, dt) => {
+    const rf = car.p.body.roll ?? 1;
+    const targetPitch = clamp(-car.ax * 0.0022 * Math.sqrt(rf), -0.025, 0.025);
+    const targetRoll = clamp(-car.ay * 0.0026 * rf, -0.035, 0.035);
+    const k = 1 - Math.exp(-dt * 16);
+    state.pitch += (targetPitch - state.pitch) * k;
+    state.roll += (targetRoll - state.roll) * k;
+    let heave = 0;
+    if (car.surface === 1) heave = Math.sin(car.time * 70) * 0.008;
+    if (car.surface === 3) heave = Math.sin(car.time * 43) * 0.012;
+    state.heave += (heave - state.heave) * 0.5;
+    body.rotation.set(state.pitch, 0, state.roll);
+    body.position.y = state.heave;
+    for (let i = 0; i < 4; i++) {
+      const w = car.wheels[i];
+      wheels[i].steer.rotation.y = w.steer;
+      wheels[i].spin.rotation.x = w.spin;
+    }
+    tailMat.emissiveIntensity = car.brake > 0.05 ? 5.5 : 0.6;
+    if (revMat) revMat.emissiveIntensity = car.gear === -1 ? 3 : 0;
+  };
 }
 
 export function disposeCar(root) {

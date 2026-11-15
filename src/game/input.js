@@ -2,6 +2,9 @@
 // deadzones, response curves) and touch (virtual steering + pedals).
 import { clamp } from '../core/math.js';
 
+/** Keyboard steering filter (shared with the response tests). */
+export const KEYBOARD = { rateIn: 9, rateV: 45, rateOut: 10 };
+
 export class Input {
   constructor() {
     this.keys = new Set();
@@ -98,8 +101,8 @@ export class Input {
       // speed-sensitive rates: quick at low speed, calmer at high speed,
       // always fast to return to centre
       const v = Math.max(0, speed);
-      const rateIn = 5.2 / (1 + v / 28);
-      const rateOut = 7.5;
+      const rateIn = KEYBOARD.rateIn / (1 + v / KEYBOARD.rateV);
+      const rateOut = KEYBOARD.rateOut;
       const rate = target === 0 || Math.sign(target) !== Math.sign(this.steer) ? rateOut : rateIn;
       const d = target - this.steer;
       this.steer += clamp(d, -rate * dt, rate * dt);

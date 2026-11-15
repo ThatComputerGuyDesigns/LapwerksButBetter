@@ -19,7 +19,7 @@ const G = 9.81;
 const RHO = 1.225;
 const AMBIENT = 24;
 /** Handling constants (exported so the tuning scripts can sweep them). */
-export const TUNE = { rearMu: 1.04, rearAlpha: 0.84, slipLock: 1.5, counterGain: 0.9, escGain: 3, yawFb: 2.5 };
+export const TUNE = { rearMu: 1.04, rearAlpha: 0.84, slipLock: 1.5, counterGain: 0.9, escGain: 3, yawFb: 4, ffSlip: 0.4 };
 
 // normalised magic-formula: peak value 1 at s = 1, tends to `slide` for big s
 function makeCurve(slide) {
@@ -132,8 +132,12 @@ export class Vehicle {
     if (sm.yawW > 0) {
       const ur = Math.max(absU, 1);
       const rd = steerIn * sm.rTarget;
-      const ff = Math.atan((p.wheelbase * rd) / ur) * (1 + 0.004 * ur);
-      const fb = (rd - r) * TUNE.yawFb * (p.wheelbase / ur) * ur * 0.1;
+      // feed-forward: kinematic angle + the front slip angle that lateral
+      // load will need (so the car turns in immediately instead of waiting
+      // for the feedback loop) ; feedback trims the rest
+      const ayReq = rd * ur;
+      const ff = Math.atan((p.wheelbase * rd) / ur) + p.tire.alphaPeak * TUNE.ffSlip * clamp(ayReq / sm.aMax, -1.2, 1.2);
+      const fb = (rd - r) * TUNE.yawFb * 0.26;
       const yawSteer = ff + fb;
       target = lerp(target, yawSteer, sm.yawW);
     }
@@ -248,7 +252,7 @@ export class Vehicle {
       surfaceWorst = Math.max(surfaceWorst, surf);
       const tempF = this.tempGrip(w.temp);
       const loadF = 1 - 0.08 * (w.load / 3500 - 1);
-      const mu = tire.mu * SURF_GRIP[surf] * tempF * loadF * (w.front ? 1 : TUNE.rearMu);
+      const mu = tire.mu * (surf >= 2 ? Math.min(1, SURF_GRIP[surf] * p.offroad) : SURF_GRIP[surf]) * tempF * loadF * (w.front ? 1 : TUNE.rearMu);
       const Fz = w.load;
       const denom = Math.max(Math.abs(vl), 1.0);
       const kp = tire.kappaPeak, ap = tire.alphaPeak * (w.front ? 1 : TUNE.rearAlpha);
@@ -337,7 +341,7 @@ export class Vehicle {
     if (absU < 0.3 && thr === 0 && (brk > 0 || input.handbrake)) { this.u *= 0.8; this.v *= 0.8; this.r *= 0.8; }
     // filtered accelerations drive weight transfer (suspension lag ≈ 70 ms)
     this.axRaw = axB - gx; this.ayRaw = ayB - gy;
-    const kf = 1 - Math.exp(-dt / 0.07);
+    const kf = 1 - Math.exp(-dt / 0.045);
     this.ax += (axB - this.ax) * kf;
     this.ay += (ayB - this.ay) * kf;
 
