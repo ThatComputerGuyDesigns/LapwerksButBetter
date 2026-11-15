@@ -301,3 +301,5 @@ input[type=number], .import-code { width: 100%; height: 36px; padding: 0 10px; b
   .cur { font-size: 26px; }
   .reveal-card { min-width: 0; width: calc(100% - 32px); }
 }
+
+.fps-meter { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 70; font: 600 12px var(--body); padding: 4px 10px; border-radius: 6px; background: rgba(0,0,0,0.6); color: #3ddc84; pointer-events: none; }

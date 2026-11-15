@@ -456,13 +456,20 @@ export class Vehicle {
     const vn = vx * nx + vz * nz;
     if (vn > 0) {
       this.lastImpact = vn;
-      vx -= vn * nx * 1.35; vz -= vn * nz * 1.35; // restitution 0.35
-      const tf = 1 - Math.min(0.5, vn * 0.03); // scrub
+      // scrub along the barrier: little bounce, friction proportional to the hit
+      vx -= vn * nx * 1.18; vz -= vn * nz * 1.18; // restitution 0.18
+      const tf = 1 - Math.min(0.35, vn * 0.02);
       vx *= tf; vz *= tf;
       this.u = vx * fwdX + vz * fwdZ;
       this.v = vx * lefX + vz * lefZ;
-      // align toward the wall tangent and kill yaw
-      this.r *= 0.6;
+      // gently turn the car parallel to the wall instead of killing its yaw
+      const tx = -nz, tz = nx; // wall tangent
+      const along = Math.sign(vx * tx + vz * tz) || 1;
+      const want = Math.atan2(tx * along, tz * along);
+      let dh = want - this.heading;
+      while (dh > Math.PI) dh -= 2 * Math.PI;
+      while (dh < -Math.PI) dh += 2 * Math.PI;
+      if (Math.abs(dh) < 1.2) this.r = this.r * 0.7 + dh * Math.min(1, vn * 0.15) * 2;
     }
   }
 

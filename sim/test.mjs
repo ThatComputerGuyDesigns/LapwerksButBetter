@@ -5,6 +5,8 @@ import { PRESETS } from '../src/track/presets.js';
 import { runLap } from './lapsim.mjs';
 import { keyLap } from './keylap.mjs';
 import { response } from './response.mjs';
+import { jitter } from './jitter.mjs';
+import { chatter } from './chatter.mjs';
 import { BODIES } from '../src/physics/carSetup.js';
 import { decodeTrack, encodeTrack } from '../src/game/store.js';
 import { strokeToControlPoints } from '../src/track/spline.js';
@@ -42,6 +44,13 @@ for (const assist of ['casual', 'sport']) {
 for (const V of [28, 45]) {
   const r = response({}, 'casual', V);
   check(r.t90 < 0.25 && r.overshoot < 0.35, `turn-in @${Math.round(V * 3.6)} km/h: 90% yaw in ${r.t90.toFixed(2)} s, overshoot ${(r.overshoot * 100).toFixed(0)}%`);
+}
+
+// 2c'. smoothness: no steering chatter from the assists or the AI
+{
+  for (const V of [12, 30, 50]) { const c = chatter('casual', V); check(c.flipsPerSec < 0.5, `assist chatter @${Math.round(V * 3.6)} km/h: ${c.flipsPerSec.toFixed(2)} reversals/s`); }
+  const j = jitter(PRESETS[0], 'casual');
+  check(j.steerFlipsPerSec < 5 && j.steerHF < 2.5, `AI lap steering smoothness: ${j.steerFlipsPerSec.toFixed(1)} reversals/s, HF ${j.steerHF.toFixed(2)}`);
 }
 
 // 2d. every car in the garage is drivable on a keyboard (Easy)

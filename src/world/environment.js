@@ -7,6 +7,8 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { buildHeightfield } from '../track/track.js';
 import { makeGradePass, makeClouds } from './post.js';
+import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflare.js';
+import { radialTexture } from './textures.js';
 import { rng, smoothstep, clamp } from '../core/math.js';
 import * as TX from './textures.js';
 
@@ -38,6 +40,15 @@ export class World {
     this.scene.add(this.sky);
     this.clouds = makeClouds();
     this.scene.add(this.clouds);
+    // sun lens flare (subtle)
+    this.flareLight = new THREE.PointLight(0xffffff, 0, 0);
+    const flare = new Lensflare();
+    flare.addElement(new LensflareElement(radialTexture('rgba(255,244,220,0.9)', 'rgba(255,200,120,0)', 256), 380, 0, new THREE.Color(1, 0.95, 0.85)));
+    flare.addElement(new LensflareElement(radialTexture('rgba(255,210,150,0.35)', 'rgba(255,180,100,0)', 128), 70, 0.45));
+    flare.addElement(new LensflareElement(radialTexture('rgba(160,200,255,0.25)', 'rgba(120,160,255,0)', 128), 110, 0.7));
+    flare.addElement(new LensflareElement(radialTexture('rgba(255,230,190,0.2)', 'rgba(255,200,140,0)', 128), 50, 0.95));
+    this.flareLight.add(flare);
+    this.scene.add(this.flareLight);
     this.sunDir = new THREE.Vector3();
 
     // lights
@@ -75,12 +86,22 @@ export class World {
 
   setQuality(q) {
     this.quality = q;
-    const pr = Math.min(window.devicePixelRatio, q === 'high' ? 2 : q === 'medium' ? 1.5 : 1);
-    this.renderer.setPixelRatio(pr);
+    this.maxPR = Math.min(window.devicePixelRatio, q === 'high' ? 1.5 : q === 'medium' ? 1.25 : 1);
+    this.resScale = this.resScale ?? 1;
+    this.renderer.setPixelRatio(this.maxPR * this.resScale);
     this.renderer.shadowMap.enabled = q !== 'low';
     this.sun.shadow.mapSize.set(q === 'high' ? 2048 : 1024, q === 'high' ? 2048 : 1024);
     if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
     this.bloom.enabled = q !== 'low';
+    this.resize();
+  }
+
+  /** Dynamic resolution: scale the render size without touching quality tiers. */
+  setResScale(k) {
+    k = Math.max(0.5, Math.min(1, k));
+    if (Math.abs(k - (this.resScale ?? 1)) < 0.02) return;
+    this.resScale = k;
+    this.renderer.setPixelRatio((this.maxPR || 1) * k);
     this.resize();
   }
 
@@ -163,6 +184,7 @@ export class World {
   tick(dt, speed = 0) {
     this.clouds.material.uniforms.time.value += dt;
     this.clouds.position.copy(this.camera.position);
+    this.flareLight.position.copy(this.camera.position).addScaledVector(this.sunDir, 4000);
     this.grade.uniforms.speed.value += ((speed > 45 ? Math.min((speed - 45) / 40, 1) : 0) - this.grade.uniforms.speed.value) * Math.min(1, dt * 3);
   }
 
@@ -258,18 +280,31 @@ export function buildVegetation(T, { density = 1 } = {}) {
     (cluster > 0.12 || R() < 0.35 ? listC : listB).push(m);
   }
   const g = new THREE.Group();
+  // split into 220 m tiles so the renderer can frustum-cull (and skip
+  // shadow-casting for) whole groups of trees you are not looking at
+  const TILE = 220;
+  const c = new THREE.Color();
+  const v = new THREE.Vector3();
   for (const [geo, list] of [[conifer, listC], [broad, listB]]) {
-    if (!list.length) continue;
-    const im = new THREE.InstancedMesh(geo, mat, list.length);
-    const c = new THREE.Color();
-    list.forEach((m, i) => {
-      im.setMatrixAt(i, m);
-      c.setHSL(0.0 + R() * 0.03, 0.0, 0.85 + R() * 0.3);
-      im.setColorAt(i, c);
-    });
-    im.castShadow = true;
-    im.receiveShadow = true;
-    g.add(im);
+    const tiles = new Map();
+    for (const m of list) {
+      v.setFromMatrixPosition(m);
+      const key = `${Math.floor(v.x / TILE)},${Math.floor(v.z / TILE)}`;
+      if (!tiles.has(key)) tiles.set(key, []);
+      tiles.get(key).push(m);
+    }
+    for (const items of tiles.values()) {
+      const im = new THREE.InstancedMesh(geo, mat, items.length);
+      items.forEach((m, i) => {
+        im.setMatrixAt(i, m);
+        c.setHSL(0.0 + R() * 0.03, 0.0, 0.85 + R() * 0.3);
+        im.setColorAt(i, c);
+      });
+      im.computeBoundingSphere();
+      im.castShadow = true;
+      im.receiveShadow = true;
+      g.add(im);
+    }
   }
   return g;
 }

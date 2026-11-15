@@ -41,7 +41,11 @@ export class HUD {
         <div class="touch-steer"><div class="touch-track"></div><div class="touch-knob"></div><span>STEER</span></div>
         <div class="touch-pedals"><div class="touch-brake">BRAKE</div><div class="touch-gas">GAS</div></div>
       </div>`;
-    this.q = (s) => root.querySelector(s);
+    const cache = new Map();
+    this.q = (sel) => { let e = cache.get(sel); if (!e) { e = root.querySelector(sel); cache.set(sel, e); } return e; };
+    // write DOM only when a value actually changes (avoids per-frame layout work)
+    this.set = (sel, prop, v) => { const e = this.q(sel); const k = sel + '|' + prop; if (this.last.get(k) !== v) { this.last.set(k, v); if (prop === 'text') e.textContent = v; else if (prop === 'class') e.className = v; else if (prop === 'hidden') e.hidden = v; else e.style[prop] = v; } };
+    this.last = new Map();
     this.revs = [...root.querySelectorAll('.revbar i')];
     this.tyres = [...root.querySelectorAll('.tyres i')];
     this.sectors = [...root.querySelectorAll('.sectors i')];
@@ -98,15 +102,15 @@ export class HUD {
     const car = session.car;
     const mph = settings.units === 'mph';
     const v = car.speed * (mph ? 2.23694 : 3.6);
-    this.q('.spd').textContent = Math.round(v);
-    this.q('.unit').textContent = mph ? 'MPH' : 'KM/H';
-    this.q('.gear').textContent = car.gear === -1 ? 'R' : car.gear === 0 ? 'N' : car.gear;
+    this.set('.spd', 'text', String(Math.round(v)));
+    this.set('.unit', 'text', mph ? 'MPH' : 'KM/H');
+    this.set('.gear', 'text', car.gear === -1 ? 'R' : car.gear === 0 ? 'N' : String(car.gear));
     const r = car.rpm / car.p.engine.redline;
     const lit = Math.round(clamp((r - 0.25) / 0.75, 0, 1) * this.revs.length);
     const limiter = r > 0.97;
     this.revs.forEach((e, k) => {
-      e.className = k < lit ? (k >= 17 ? 'r' : k >= 13 ? 'y' : 'g') : '';
-      if (limiter) e.className += ' blink';
+      const c = (k < lit ? (k >= 17 ? 'r' : k >= 13 ? 'y' : 'g') : '') + (limiter ? ' blink' : '');
+      if (e.className !== c) e.className = c;
     });
     // tyre temps: blue cold → green ok → red hot
     car.wheels.forEach((w, k) => {
@@ -114,38 +118,37 @@ export class HUD {
       const opt = car.p.tire.optTemp, win = car.p.tire.window;
       const x = (t - opt) / win;
       const col = x < -0.6 ? '#3b8cff' : x < -0.25 ? '#36c2d6' : x < 0.35 ? '#3ddc84' : x < 0.8 ? '#ffb020' : '#ff4433';
-      this.tyres[k].style.background = col;
-      this.tyres[k].title = `${t.toFixed(0)}°C`;
+      if (this.tyres[k].dataset.c !== col) { this.tyres[k].dataset.c = col; this.tyres[k].style.background = col; }
     });
     const abs = car.wheels.some((w) => w.brakeMod < 0.95);
     this.q('.abs').classList.toggle('on', abs);
     this.q('.tcs').classList.toggle('on', car.tcsCut < 0.95);
     this.q('.abs').classList.toggle('off', !car.assists.abs);
     this.q('.tcs').classList.toggle('off', !car.assists.tcs);
-    this.q('.pedals .thr').style.transform = `scaleY(${car.throttle})`;
-    this.q('.pedals .brk').style.transform = `scaleY(${car.brake})`;
+    this.set('.pedals .thr', 'transform', `scaleY(${car.throttle.toFixed(2)})`);
+    this.set('.pedals .brk', 'transform', `scaleY(${car.brake.toFixed(2)})`);
 
     // timing
     const L = session.lap;
     const t = L.start != null ? session.time - L.start : 0;
-    this.q('.cur').textContent = formatTime(t);
-    this.q('.lapnum').textContent = String(session.lapsDone + 1);
-    this.q('.inv').hidden = !L.invalid;
-    this.q('.last').textContent = session.lastLap ? formatTime(session.lastLap.time) : '–:––.–––';
-    this.q('.best').textContent = session.best ? formatTime(session.best.time) : '–:––.–––';
+    this.set('.cur', 'text', formatTime(t));
+    this.set('.lapnum', 'text', String(session.lapsDone + 1));
+    this.set('.inv', 'hidden', !L.invalid);
+    this.set('.last', 'text', session.lastLap ? formatTime(session.lastLap.time) : '–:––.–––');
+    this.set('.best', 'text', session.best ? formatTime(session.best.time) : '–:––.–––');
     const d = session.delta();
     const de = this.q('.delta');
-    de.textContent = d == null ? '' : formatDelta(d);
-    de.className = 'delta ' + (d == null ? '' : d < 0 ? 'fast' : 'slow');
+    this.set('.delta', 'text', d == null ? '' : formatDelta(d));
+    this.set('.delta', 'class', 'delta ' + (d == null ? '' : d < 0 ? 'fast' : 'slow'));
     if (L.sector === 0 && L.sectorTimes.length === 0) this.sectors.forEach((e) => (e.className = ''));
 
     // countdown
     const cd = this.q('.countdown');
     if (session.state === 'countdown') {
       const n = Math.ceil(session.countdown - 0.7);
-      cd.textContent = n > 0 && n <= 3 ? n : '';
-      cd.className = 'countdown' + (n > 0 && n <= 3 ? ' show' : '');
-    } else cd.className = 'countdown';
+      this.set('.countdown', 'text', n > 0 && n <= 3 ? String(n) : '');
+      this.set('.countdown', 'class', 'countdown' + (n > 0 && n <= 3 ? ' show' : ''));
+    } else this.set('.countdown', 'class', 'countdown');
 
     // minimap
     const g = this.mctx;

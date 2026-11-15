@@ -143,7 +143,10 @@ export class AudioEngine {
     const fire = (rpm / 60) * (cyl / 2);
     const load = clamp(car.throttle, 0, 1);
     const cut = car.revCut ? 0.25 : 1;
-    for (const o of this.oscs) o.o.frequency.setTargetAtTime(fire * o.mul * (1 + (Math.random() - 0.5) * 0.004), t, 0.012);
+    for (const o of this.oscs) o.o.frequency.setTargetAtTime(fire * o.mul, t, 0.02);
+    // overrun crackle: lifting off at high revs pops through the exhaust
+    const overrun = car.throttle < 0.05 && rpm > p.engine.redline * 0.55;
+    if (overrun && Math.random() < 0.06 * (rpm / p.engine.redline)) this.pop(0.08 + Math.random() * 0.12);
     this.engFilter.frequency.setTargetAtTime(lerp(380, 3200, load * 0.75 + (rpm / p.engine.redline) * 0.35) * (cams.interior ? 0.8 : 1), t, 0.03);
     this.engOut.gain.setTargetAtTime((0.11 + load * 0.16 + (rpm / p.engine.redline) * 0.05) * cut, t, 0.03);
     this.intake.frequency.setTargetAtTime(fire * 3.2, t, 0.02);
@@ -199,6 +202,19 @@ export class AudioEngine {
       n.connect(f).connect(g).connect(this.master);
       n.stop(t + 0.15);
     }
+  }
+
+  pop(vol) {
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const n = this.noise();
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass'; f.frequency.value = 500 + Math.random() * 900; f.Q.value = 1.4;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.05 + Math.random() * 0.04);
+    n.connect(f).connect(g).connect(this.master);
+    n.stop(t + 0.12);
   }
 
   impact(strength) {

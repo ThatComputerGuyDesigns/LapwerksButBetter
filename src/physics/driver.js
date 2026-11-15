@@ -28,7 +28,9 @@ export class AIDriver {
     const beta = Math.atan2(car.v, Math.max(u, 1));
     delta += beta * 0.85 * (1 - car.assists.steer * 0.9); // steer into the slide (assist does part of it)
     delta += (car.r - u * kappa * -1) * 0.04 * 0; // (reserved: yaw-rate feedback)
-    const steer = car.steerInputFor(delta);
+    // smooth like human hands (≈60 ms) — removes visible twitching
+    this.sOut = (this.sOut ?? 0) + (car.steerInputFor(delta) - (this.sOut ?? 0)) * 0.07;
+    const steer = this.sOut;
 
     // speed: look slightly ahead (brake reaction)
     const kv = Math.round((4 + u * 0.12) / T.DS);

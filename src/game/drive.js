@@ -49,6 +49,9 @@ export class DriveSession {
     this.time = 0;
     this.paused = false;
     this.lap = this.newLapState();
+    this.prev = { x: 0, z: 0, h: 0 };
+    this.tiltQ = new THREE.Quaternion();
+    this._v = { y: new THREE.Vector3(0, 1, 0), up: new THREE.Vector3(), qa: new THREE.Quaternion(), qh: new THREE.Quaternion(), qt: new THREE.Quaternion() };
     this.trackKey = app.trackKey();
     this.best = app.store.getBest(this.trackKey, this.setup) || null; // {time, splits:[...], ghost:[...], sectors}
     this.lastLap = null;
@@ -74,6 +77,9 @@ export class DriveSession {
     this.skids.reset();
     this.camPos.set(0, 0, 0);
     this.camInit = false;
+    this.prev = { x: this.car.x, z: this.car.z, h: this.car.heading };
+    this.visInit = false;
+    this.tiltQ = new THREE.Quaternion();
     if (this.best?.ghost?.length) this.ensureGhost();
   }
 
@@ -147,6 +153,8 @@ export class DriveSession {
       this.acc += dt;
       let steps = 0;
       while (this.acc >= PHYS_DT && steps < 16) {
+        // remember the previous physics pose for render interpolation
+        this.prev.x = car.x; this.prev.z = car.z; this.prev.h = car.heading;
         car.step(PHYS_DT, cmd);
         this.acc -= PHYS_DT;
         steps++;
@@ -163,14 +171,28 @@ export class DriveSession {
       }
     }
 
-    // ----- visuals
-    const q = car.q;
-    this.mesh.position.set(car.x, car.y, car.z);
-    // align to surface normal then heading
-    const n = new THREE.Vector3(q.normal[0], q.normal[1], q.normal[2]);
-    const qa = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), n);
-    const qh = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), car.heading);
-    this.mesh.quaternion.copy(qa.multiply(qh));
+    // ----- visuals: interpolate between the last two physics states so motion
+    // is perfectly smooth at any refresh rate (60/120/144 Hz)
+    const alpha = this.state === 'running' ? clamp(this.acc / PHYS_DT, 0, 1) : 1;
+    const P = this.prev;
+    const vx = P.x + (car.x - P.x) * alpha, vz = P.z + (car.z - P.z) * alpha;
+    this.visHeading = P.h + angleWrap(car.heading - P.h) * alpha;
+    const vq = this.T.query(vx, vz, car.hint);
+    const V = this._v;
+    V.up.set(vq.normal[0], vq.normal[1], vq.normal[2]);
+    V.qa.setFromUnitVectors(V.y, V.up);
+    V.qh.setFromAxisAngle(V.y, this.visHeading);
+    V.qa.multiply(V.qh);
+    // smooth the surface tilt (sample-to-sample normal changes) but never the heading
+    if (!this.visInit) { this.mesh.quaternion.copy(V.qa); this.visY = vq.height; this.visInit = true; }
+    else {
+      V.qt.setFromAxisAngle(V.y, this.visHeading);
+      this.tiltQ.slerp(V.qa.clone().multiply(V.qt.invert()), damp(18, dt));
+      this.mesh.quaternion.copy(this.tiltQ).multiply(V.qh);
+    }
+    this.visY += (vq.height - this.visY) * damp(30, dt);
+    if (Math.abs(vq.height - this.visY) > 0.5) this.visY = vq.height;
+    this.mesh.position.set(vx, this.visY, vz);
     this.mesh.userData.sync(car, dt);
     this.effects(dt);
     this.updateGhost();
@@ -308,18 +330,19 @@ export class DriveSession {
     const cam = this.world.camera;
     const car = this.car;
     const m = this.mesh;
-    const fwd = new THREE.Vector3(Math.sin(car.heading), 0, Math.cos(car.heading));
+    const H = this.visHeading ?? car.heading;
+    const fwd = new THREE.Vector3(Math.sin(H), 0, Math.cos(H));
     const spd = car.speed;
     const carPos = m.position;
     let desiredPos, look, fov = 58;
-    const velDir = new THREE.Vector3(fwd.x * car.u + Math.cos(car.heading) * car.v, 0, fwd.z * car.u - Math.sin(car.heading) * car.v);
+    const velDir = new THREE.Vector3(fwd.x * car.u + Math.cos(H) * car.v, 0, fwd.z * car.u - Math.sin(H) * car.v);
     if (velDir.lengthSq() > 4) velDir.normalize(); else velDir.copy(fwd);
     // chase cams look along a blend of heading and velocity (shows slides)
     // camera yaw follows the car's heading with a short lag (no sideways
     // positional swing — that is what made the car feel like a boat), and
     // leans a little toward the direction of travel when sliding
     const slideYaw = Math.atan2(velDir.x, velDir.z);
-    const wantYaw = car.heading + angleWrap(slideYaw - car.heading) * 0.22;
+    const wantYaw = H + angleWrap(slideYaw - H) * 0.22;
     if (this.camYaw == null || !this.camInit) this.camYaw = wantYaw;
     this.camYaw += angleWrap(wantYaw - this.camYaw) * damp(9, dt);
     const dir = new THREE.Vector3(Math.sin(this.camYaw), 0, Math.cos(this.camYaw));
@@ -381,7 +404,13 @@ export class DriveSession {
     cam.position.copy(this.camPos);
     // subtle shake on kerbs / gravel and at speed
     const shake = (car.surface === 1 ? 0.02 : car.surface >= 2 ? 0.03 : 0) * clamp(spd / 30, 0, 1) + clamp((spd - 50) / 40, 0, 1) * 0.004;
-    if (shake > 0 && this.mode === 'race') cam.position.add(new THREE.Vector3((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake));
+    // smooth, continuous shake (layered sines) — random per-frame jitter reads as stutter
+    this.shakeAmp = (this.shakeAmp || 0) + (shake - (this.shakeAmp || 0)) * damp(8, dt);
+    if (this.shakeAmp > 1e-4 && this.mode === 'race') {
+      const t = this.time;
+      cam.position.x += (Math.sin(t * 37.1) + Math.sin(t * 23.7 + 1.3)) * 0.5 * this.shakeAmp;
+      cam.position.y += (Math.sin(t * 41.3 + 0.7) + Math.sin(t * 29.9)) * 0.5 * this.shakeAmp;
+    }
     cam.lookAt(this.camLook);
     cam.fov += (fov - cam.fov) * damp(3, dt);
     cam.updateProjectionMatrix();

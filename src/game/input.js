@@ -120,5 +120,25 @@ export class Input {
     return out;
   }
 
+  /** Gamepad rumble: kerbs, gravel, wheelspin/lock and impacts. */
+  rumble(car) {
+    if (this.source !== 'gamepad') return;
+    const now = performance.now();
+    if (now - (this.lastRumble || 0) < 90) return;
+    const gp = [...(navigator.getGamepads?.() || [])].find((g) => g && g.connected);
+    const act = gp?.vibrationActuator;
+    if (!act?.playEffect) return;
+    let strong = 0, weak = 0;
+    const spd = Math.min(car.speed / 30, 1);
+    if (car.surface === 1) weak = 0.35 * spd;
+    if (car.surface >= 2) { strong = 0.25 * spd; weak = 0.3 * spd; }
+    const slip = Math.max(...car.wheels.map((w) => w.slipVel)) / 12;
+    weak = Math.max(weak, Math.min(0.4, slip * 0.4));
+    if (car.lastImpact > 1.2) strong = Math.min(1, car.lastImpact / 10);
+    if (strong + weak < 0.03) return;
+    this.lastRumble = now;
+    act.playEffect('dual-rumble', { duration: 110, strongMagnitude: strong, weakMagnitude: weak }).catch(() => {});
+  }
+
   endFrame() { this.edges.clear(); }
 }

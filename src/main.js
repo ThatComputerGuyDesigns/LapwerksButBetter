@@ -453,7 +453,24 @@ class App {
     if (I.pressed('KeyC') || I.pressed('GP_Y')) s.cycleCamera();
     if (I.pressed('KeyR') || I.pressed('GP_BACK')) { s.car.recover(); s.message('RESET', '', 0.8); if (s.lap.start != null) s.lap.invalid = true; }
     if (I.pressed('KeyL')) { this.settings.showLine = !this.settings.showLine; this.applySettings(); s.message(this.settings.showLine ? 'DRIVING LINE ON' : 'DRIVING LINE OFF', '', 1); }
+    if (I.pressed('KeyF')) this.toggleFps();
     if (I.pressed('KeyG')) { this.settings.ghost = !this.settings.ghost; this.saveSettings(); s.message(this.settings.ghost ? 'GHOST ON' : 'GHOST OFF', '', 1); }
+  }
+
+  toggleFps() {
+    if (this.fpsEl) { this.fpsEl.remove(); this.fpsEl = null; return; }
+    const e = (this.fpsEl = document.createElement('div'));
+    e.className = 'fps-meter';
+    document.body.appendChild(e);
+    let n = 0, acc = 0, worst = 0;
+    const tick = (dt) => {
+      n++; acc += dt; worst = Math.max(worst, dt);
+      if (acc >= 0.5 && this.fpsEl) {
+        e.textContent = `${Math.round(n / acc)} fps · worst ${(worst * 1000).toFixed(0)} ms · ${Math.round((this.world.resScale ?? 1) * 100)}% res · ${this.world.quality}`;
+        n = 0; acc = 0; worst = 0;
+      }
+    };
+    this.fpsTick = tick;
   }
 
   // ------------------------------------------------------------ main loop
@@ -464,6 +481,7 @@ class App {
       const dt = Math.min((now - this.lastT) / 1000, 0.1);
       this.lastT = now;
       this.frame(dt);
+      if (this.fpsEl) this.fpsTick(dt);
       this.input.endFrame();
     };
     requestAnimationFrame(tick);
@@ -494,6 +512,7 @@ class App {
         if (this.input.source === 'touch' && !$('#hud').classList.contains('touch')) this.hud.setTouch(true);
       }
       this.session.update(dt, cmd);
+      if (scr === 'race') this.input.rumble(this.session.car);
       if (scr === 'race') this.hud.update(this.session, this.settings);
     }
     this.world.tick(dt, scr === 'race' && this.session ? this.session.car.speed : 0);
@@ -501,18 +520,33 @@ class App {
     this.adaptQuality(dt);
   }
 
+  /**
+   * Keep the frame rate smooth: continuously scale render resolution (and, if
+   * that is not enough, drop a quality tier). Remembers the scale at which
+   * stutter appeared so it does not keep oscillating.
+   */
   adaptQuality(dt) {
-    if (this.settings.quality !== 'auto') return;
+    if (this.settings.quality !== 'auto' || document.hidden) return;
     const f = this.fps;
+    if (dt > 0.25) return; // tab switch / hitch, ignore
     f.acc += dt; f.n++;
-    if (f.acc < 2) return;
+    f.worst = Math.max(f.worst || 0, dt);
+    if (f.acc < 0.75) return;
     const avg = f.acc / f.n;
-    f.acc = 0; f.n = 0;
-    const order = ['low', 'medium', 'high'];
-    const i = order.indexOf(this.world.quality);
-    if (avg > 1 / 45) { f.slow++; f.fast = 0; } else if (avg < 1 / 58) { f.fast++; f.slow = 0; } else { f.slow = 0; f.fast = 0; }
-    if (f.slow >= 2 && i > 0) { this.world.setQuality(order[i - 1]); f.slow = 0; }
-    if (f.fast >= 6 && i < 2 && this.world.renderer.getPixelRatio() < window.devicePixelRatio) { this.world.setQuality(order[i + 1]); f.fast = 0; }
+    f.acc = 0; f.n = 0; f.worst = 0;
+    const W = this.world;
+    const k = W.resScale ?? 1;
+    if (avg > 1 / 52) {
+      f.ceiling = Math.min(f.ceiling ?? 1, k);
+      if (k > 0.55) W.setResScale(k * 0.88);
+      else if (W.quality !== 'low') { W.setQuality(W.quality === 'high' ? 'medium' : 'low'); W.setResScale(0.85); }
+      f.good = 0;
+    } else if (avg < 1 / 57) {
+      f.good = (f.good || 0) + 1;
+      // creep back up slowly, staying just below the scale that stuttered
+      if (f.good >= 6 && k < 1 && k * 1.06 < (f.ceiling ?? 1) - 0.02) { W.setResScale(k * 1.06); f.good = 0; }
+      if (f.good >= 40) { f.ceiling = Math.min(1, (f.ceiling ?? 1) + 0.05); f.good = 0; }
+    }
   }
 }
 

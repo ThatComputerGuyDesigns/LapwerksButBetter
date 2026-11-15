@@ -245,10 +245,12 @@ export class Garage {
 
   update(dt) {
     if (!this.drag) this.yaw += dt * 0.18;
-    const r = 8.4;
     this.camera.aspect = window.innerWidth / window.innerHeight;
-    // frame the car to the left of the panel on wide screens
-    const wide = window.innerWidth > 900;
+    // frame the car to the left of the panel on wide screens; back off on
+    // narrow / portrait windows so the whole car always fits
+    const wide = window.innerWidth > 820;
+    const visibleAspect = wide ? (window.innerWidth - 400) / window.innerHeight : this.camera.aspect;
+    const r = 8.4 * Math.max(1, 1.55 / Math.max(visibleAspect, 0.5)) * (wide ? 1 : 1.25);
     this.camera.setViewOffset(window.innerWidth, window.innerHeight, wide ? 200 : 0, wide ? 0 : 120, window.innerWidth, window.innerHeight);
     this.camera.position.set(Math.sin(this.yaw) * r, 2.3, Math.cos(this.yaw) * r);
     this.camera.lookAt(0, 0.55, 0);

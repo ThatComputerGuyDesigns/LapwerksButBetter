@@ -191,6 +191,19 @@ export function createCar(setup) {
     }
   }
 
+  // ---------------- wheel-arch lips (define the arches, read as real panels)
+  for (const az of axles) {
+    const tA = (az - zR) / (zF - zR);
+    const xw = halfW(tA) * 0.985;
+    for (const sx of [1, -1]) {
+      const lip = new THREE.Mesh(new THREE.TorusGeometry(archR + 0.012, 0.022, 8, 32, Math.PI * 1.04), B.model === 'rally' || B.model === 'jdm' ? blackMat : paintMat);
+      lip.rotation.y = Math.PI / 2;
+      lip.rotation.x = -Math.PI * 0.02;
+      lip.position.set(sx * xw, wheelR, az);
+      body.add(lip);
+    }
+  }
+
   // ---------------- lights
   const tmp = new THREE.Vector3();
   const headMat = new THREE.MeshPhysicalMaterial({ color: 0xdfe6ee, emissive: 0xd8e6ff, emissiveIntensity: 0.55, roughness: 0.05, metalness: 0.6, clearcoat: 1 });
