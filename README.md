@@ -36,6 +36,11 @@ assets: every texture, model and sound is generated in code.
   Each car has its own gearbox, grip, aero, body roll and engine sound. You can also change
   tyre compound, drivetrain, paint, finish, livery, number and rims. Nine tuning settings. Performance figures (0–100, top speed, grip) come from
   running the real physics model.
+- **Race mode.** Grid start against 3, 5 or 7 AI rivals over 2–10 laps, with three difficulty
+  levels. Rivals overtake, defend and keep their distance in traffic, and cars collide with
+  each other. You get a live leaderboard with gaps, your position, and a results screen.
+- **Grip levels.** Arcade (default) brakes about 30% shorter and turns about 30% tighter than
+  real cars. Sport sits in between, and Realistic uses true-to-life figures.
 - **Racing.** Start lights, lap and sector timing, a live delta, track limits, a ghost of your
   best lap, saved personal bests, a colour-coded driving line, five cameras, tyre smoke,
   skid marks, and synthesised engine, tyre, kerb, wind and impact audio.
@@ -54,6 +59,8 @@ npm run sim     # AI lap simulation on every preset → lap time vs theoretical 
 node sim/skidpad.mjs gt 25   # steady-state ramp-steer test (understeer gradient, limit g)
 node sim/response.mjs        # turn-in speed / overshoot / slip ("is it a boat?")
 node sim/keylap.mjs casual   # a crude keyboard player (on/off keys, 150 ms reactions) on every track
+node sim/race.mjs            # full headless races vs AI rivals (finish order, contacts, spins)
+node sim/jitter.mjs          # steering/yaw chatter (smoothness)
 ```
 
 With Sport assists, the AI driver laps every preset within about 2–4% of the

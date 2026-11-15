@@ -127,6 +127,25 @@
       </div>
     </section>
 
+    <section id="modes" class="overlay" hidden>
+      <div class="panel glass wide">
+        <div class="panel-head"><h2>Drive</h2><button class="icon-btn" data-close><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg></button></div>
+        <div class="modes-body"></div>
+      </div>
+    </section>
+
+    <section id="results" class="overlay" hidden>
+      <div class="panel glass">
+        <h2>Race results</h2>
+        <div class="results-body"></div>
+        <div class="stack">
+          <button class="btn primary" data-res="again">Race again</button>
+          <button class="btn" data-res="modes">Change race settings</button>
+          <button class="btn ghost" data-res="menu">Main menu</button>
+        </div>
+      </div>
+    </section>
+
     <div id="toast" class="toast"></div>
     <script type="module" src="/src/main.js"></script>
   </body>

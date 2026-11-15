@@ -19,7 +19,7 @@ const G = 9.81;
 const RHO = 1.225;
 const AMBIENT = 24;
 /** Handling constants (exported so the tuning scripts can sweep them). */
-export const TUNE = { rearMu: 1.04, rearAlpha: 0.84, slipLock: 1.5, counterGain: 0.9, escGain: 3, yawFb: 4, ffSlip: 0.4 };
+export const TUNE = { rearMu: 1.04, rearAlpha: 0.84, slipLock: 1.5, counterGain: 0.9, escGain: 3, yawFb: 4, ffSlip: 0.4, peakCap: 1.1 };
 
 // normalised magic-formula: peak value 1 at s = 1, tends to `slide` for big s
 function makeCurve(slide) {
@@ -89,6 +89,17 @@ export class Vehicle {
 
   get speed() { return Math.hypot(this.u, this.v); }
 
+  worldVel() {
+    const fx = Math.sin(this.heading), fz = Math.cos(this.heading), lx = Math.cos(this.heading), lz = -Math.sin(this.heading);
+    return [fx * this.u + lx * this.v, fz * this.u + lz * this.v];
+  }
+
+  setWorldVel(vx, vz) {
+    const fx = Math.sin(this.heading), fz = Math.cos(this.heading), lx = Math.cos(this.heading), lz = -Math.sin(this.heading);
+    this.u = vx * fx + vz * fz;
+    this.v = vx * lx + vz * lz;
+  }
+
   /** Driver input → one physics step. input: {throttle, brake, steer (-1..1, + = left), handbrake, shiftUp, shiftDown} */
   step(dt, input) {
     const p = this.p, A = this.assists, W = this.wheels;
@@ -140,6 +151,13 @@ export class Vehicle {
       const fb = (rd - r) * TUNE.yawFb * 0.26;
       const yawSteer = ff + fb;
       target = lerp(target, yawSteer, sm.yawW);
+      // never push the front tyres past their peak slip angle: that is where
+      // grip falls off (understeer) — holding full lock now means max grip
+      if (absU > 5) {
+        const betaF = Math.atan2(v + r * p.a, absU) * sign(u || 1);
+        const lim = p.tire.alphaPeak * TUNE.peakCap;
+        target = lerp(target, clamp(target, betaF - lim, betaF + lim), sm.yawW);
+      }
     }
     target = clamp(target, -p.maxSteer, p.maxSteer);
     const rate = p.steerRate * (steerIn === 0 ? 1.4 : 1);

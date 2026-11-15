@@ -7,6 +7,7 @@ import { keyLap } from './keylap.mjs';
 import { response } from './response.mjs';
 import { jitter } from './jitter.mjs';
 import { chatter } from './chatter.mjs';
+import { race } from './race.mjs';
 import { BODIES } from '../src/physics/carSetup.js';
 import { decodeTrack, encodeTrack } from '../src/game/store.js';
 import { strokeToControlPoints } from '../src/track/spline.js';
@@ -57,6 +58,13 @@ for (const V of [28, 45]) {
 for (const id of Object.keys(BODIES)) {
   const r = keyLap(PRESETS[0], 'casual', 0.9, { body: id, compound: BODIES[id].compound });
   check(r.laps.length === 2 && r.spins === 0 && r.offs <= 1, `keyboard Easy · ${BODIES[id].name}: ${r.laps.map(formatTime).join(' / ')} · spins ${r.spins} · offs ${r.offs}`);
+}
+
+// 2e. races: every car finishes, nobody spins, difficulty orders the field
+for (const d of ['easy', 'hard']) {
+  const r = race(PRESETS[0], { difficulty: d, laps: 2 });
+  const pos = r.standings.findIndex((x) => x.isPlayer) + 1;
+  check(r.allFinished && r.spins === 0, `race vs ${d} rivals: all finished, spins ${r.spins}, AI player P${pos}`);
 }
 
 // 3. car ordering: slicks beat street tyres, prototype beats hatch

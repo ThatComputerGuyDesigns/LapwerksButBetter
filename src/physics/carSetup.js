@@ -109,6 +109,18 @@ export const DEFAULT_SETUP = {
   drivetrain: null, // null = body default
 };
 
+/**
+ * Gameplay grip level (set from the app settings). 'arcade' turns sharper and
+ * stops harder than real cars; 'real' uses the true-to-life figures.
+ */
+export const GRIP_LEVELS = {
+  arcade: { grip: 1.5, brake: 1.6, steer: 1.25 },
+  sport: { grip: 1.22, brake: 1.25, steer: 1.12 },
+  real: { grip: 1, brake: 1, steer: 1 },
+};
+export const GAMEPLAY = { ...GRIP_LEVELS.arcade };
+export function setGripLevel(k) { Object.assign(GAMEPLAY, GRIP_LEVELS[k] || GRIP_LEVELS.arcade); }
+
 /** Build the physical parameter set consumed by the vehicle model. */
 export function makeCarParams(setup = DEFAULT_SETUP) {
   const s = { ...DEFAULT_SETUP, ...setup };
@@ -153,11 +165,11 @@ export function makeCarParams(setup = DEFAULT_SETUP) {
     finalDrive: finalBase * s.finalDrive,
     shiftTime: 0.11,
     aero: { cdA, clA, balance: B.aeroBalance + s.aeroBalance },
-    tire: { ...C, mu: C.mu * B.grip },
-    brake: { maxTorque: mass * 9.81 * 1.55 * B.wheelR, bias: B.brakeBias + s.brakeBias, handbrake: 2600 },
+    tire: { ...C, mu: C.mu * B.grip * GAMEPLAY.grip },
+    brake: { maxTorque: mass * 9.81 * 1.55 * B.wheelR * GAMEPLAY.brake * Math.max(1, C.mu * B.grip * GAMEPLAY.grip / 1.2), bias: B.brakeBias + s.brakeBias, handbrake: 2600 },
     diffLock: s.diffLock,
     rollFront: s.rollFront,
-    maxSteer: B.steer * s.steerLock,
+    maxSteer: B.steer * s.steerLock * GAMEPLAY.steer,
     offroad: B.offroad || 1,
     steerRate: 6,
   };

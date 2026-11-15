@@ -59,6 +59,7 @@ export class World {
     sc.left = -70; sc.right = 70; sc.top = 70; sc.bottom = -70; sc.near = 1; sc.far = 600;
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.04;
+    this.sun.shadow.radius = 3.5; // soft penumbra (PCF)
     this.scene.add(this.sun, this.sun.target);
     this.hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.5);
     this.scene.add(this.hemi);
@@ -183,6 +184,7 @@ export class World {
   /** Per-frame cosmetic updates (clouds drift, speed blur). */
   tick(dt, speed = 0) {
     this.clouds.material.uniforms.time.value += dt;
+    if (this.grassUniforms) this.grassUniforms.time.value += dt;
     this.clouds.position.copy(this.camera.position);
     this.flareLight.position.copy(this.camera.position).addScaledVector(this.sunDir, 4000);
     this.grade.uniforms.speed.value += ((speed > 45 ? Math.min((speed - 45) / 40, 1) : 0) - this.grade.uniforms.speed.value) * Math.min(1, dt * 3);

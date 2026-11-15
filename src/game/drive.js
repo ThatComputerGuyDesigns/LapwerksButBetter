@@ -11,12 +11,13 @@ import { Particles, SkidMarks } from './effects.js';
 import { buildRacingLineMesh } from '../world/trackMesh.js';
 import { clamp, lerp, angleWrap, damp } from '../core/math.js';
 import { audio } from '../audio/audio.js';
+import { RaceField } from './rivals.js';
 
 const PHYS_DT = 1 / 240;
 export const CAMERAS = ['chase', 'near', 'hood', 'bumper', 'orbit'];
 
 export class DriveSession {
-  constructor(app, { mode = 'race' } = {}) {
+  constructor(app, { mode = 'race', race = null } = {}) {
     this.app = app;
     this.world = app.world;
     this.T = app.track;
@@ -57,6 +58,8 @@ export class DriveSession {
     this.lastLap = null;
     this.lapsDone = 0;
     this.msgs = [];
+    this.raceCfg = mode === 'race' ? race : null;
+    this.field = this.raceCfg ? new RaceField(this, this.raceCfg) : null;
     this.resetToGrid();
   }
 
@@ -68,7 +71,13 @@ export class DriveSession {
     const T = this.T;
     const sGrid = T.length - 14;
     const i = Math.floor(sGrid / T.DS);
-    this.car.reset(sGrid, this.mode === 'attract' ? this.line.offset[i] : T.half * 0.45);
+    if (this.field) {
+      const slot = this.field.resetGrid();
+      this.car.reset(slot.s, slot.lat);
+    } else this.car.reset(sGrid, this.mode === 'attract' ? this.line.offset[i] : T.half * 0.45);
+    this.lapsDone = 0;
+    this.raceBest = null;
+    this.goTime = null;
     for (const w of this.car.wheels) { w.temp = 45; w.core = 40; }
     this.lap = this.newLapState();
     this.lap.lastS = this.car.q.s;
@@ -99,6 +108,7 @@ export class DriveSession {
 
   dispose() {
     for (const o of [this.mesh, this.ghostMesh]) if (o) { this.world.content.remove(o); disposeCar(o); }
+    this.field?.dispose();
     this.world.content.remove(this.particles.points, this.skids.mesh, this.lineMesh);
     this.particles.points.geometry.dispose();
     this.skids.mesh.geometry.dispose();
@@ -121,7 +131,7 @@ export class DriveSession {
     const car = this.car;
     const T = this.T;
     let cmd = { throttle: 0, brake: 0, steer: 0, handbrake: false };
-    if (this.mode === 'attract') cmd = this.ai.control(car);
+    if (this.mode === 'attract' || this.state === 'finished') { this.ai.pace = this.state === 'finished' ? 0.75 : this.ai.pace; cmd = this.ai.control(car); }
     else if (input) cmd = input;
 
     if (this.paused) { this.updateCamera(dt); return; }
@@ -141,12 +151,13 @@ export class DriveSession {
         if (lights) lights.forEach((m) => (m.emissiveIntensity = 0));
         audio.beep(1040, 0.35, 0.28);
         this.message('GO', 'go', 1);
-        this.lap.start = this.time;
-        this.lap.standing = true;
+        // the lap timer starts when you first cross the line
+        this.goTime = this.time;
       }
       // keep the car still but let the engine rev
       const thr = cmd.throttle;
       car.step(PHYS_DT, { throttle: 0, brake: 1, steer: cmd.steer });
+      this.field?.step(PHYS_DT, 0, false);
       car.rpm = lerp(car.rpm, car.p.engine.idle + thr * car.p.engine.redline * 0.75, 1 - Math.exp(-dt * 8));
       car.throttle = thr;
     } else {
@@ -156,6 +167,7 @@ export class DriveSession {
         // remember the previous physics pose for render interpolation
         this.prev.x = car.x; this.prev.z = car.z; this.prev.h = car.heading;
         car.step(PHYS_DT, cmd);
+        this.field?.step(PHYS_DT, this.time - (this.goTime ?? this.time), true);
         this.acc -= PHYS_DT;
         steps++;
       }
@@ -194,6 +206,7 @@ export class DriveSession {
     if (Math.abs(vq.height - this.visY) > 0.5) this.visY = vq.height;
     this.mesh.position.set(vx, this.visY, vz);
     this.mesh.userData.sync(car, dt);
+    this.field?.sync(dt, alpha);
     this.effects(dt);
     this.updateGhost();
     this.updateCamera(dt);
@@ -246,7 +259,19 @@ export class DriveSession {
     const L = this.lap;
     const lapTime = t;
     this.lapsDone++;
-    const valid = !L.invalid && !L.standing;
+    const valid = !L.invalid;
+    if (this.raceCfg) {
+      this.raceBest = this.raceBest == null ? lapTime : Math.min(this.raceBest, lapTime);
+      if (this.lapsDone >= this.raceCfg.laps && this.state !== 'finished') {
+        const raceTime = this.time - this.goTime;
+        this.field.playerFinished = raceTime;
+        this.state = 'finished';
+        const pos = this.field.standings().findIndex((r) => r.isPlayer) + 1;
+        this.message(pos === 1 ? 'YOU WIN!' : `FINISHED P${pos}`, pos === 1 ? 'best' : 'go', 4);
+        audio.beep(pos === 1 ? 1568 : 988, 0.4, 0.25);
+        setTimeout(() => this.app.onRaceFinish?.(this), 2500);
+      }
+    }
     this.lastLap = { time: lapTime, valid };
     L.sectorTimes.push(lapTime);
     if (valid && (!this.best || lapTime < this.best.time)) {

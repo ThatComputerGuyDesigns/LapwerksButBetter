@@ -19,7 +19,13 @@ export class AIDriver {
     const look = 7 + u * 0.42;
     const k = Math.round(look / T.DS);
     const j = (i + k) % N;
-    const dx = L.x[j] - car.x, dz = L.z[j] - car.z;
+    // optional lateral shift off the racing line (overtaking / defending)
+    let tx = L.x[j], tz = L.z[j];
+    if (this.offset) {
+      const off = clamp(L.offset[j] + this.offset, -T.half + 1.1, T.half - 1.1) - L.offset[j];
+      tx += T.nx[j] * off; tz += T.nz[j] * off;
+    }
+    const dx = tx - car.x, dz = tz - car.z;
     const ang = angleWrap(Math.atan2(dx, dz) - car.heading);
     const dist = Math.hypot(dx, dz);
     // pure pursuit curvature → front wheel angle; small slip compensation
@@ -37,6 +43,7 @@ export class AIDriver {
     let vt = Infinity;
     for (let m = 0; m <= kv; m++) vt = Math.min(vt, this.profile.v[(i + m) % N]);
     vt *= this.pace;
+    if (this.speedCap != null) vt = Math.min(vt, Math.max(this.speedCap, 3));
     const err = vt - u;
     let throttle = 0, brake = 0;
     if (err > 0) throttle = clamp(0.35 + err * 0.45, 0, 1);

@@ -15,7 +15,7 @@ function edgeHeight(T, i, d) {
 }
 
 /** Height of the runoff surface (identical to the physics query). */
-function runoffHeight(T, i, d) {
+export function runoffHeight(T, i, d) {
   const edge = T.half + KERB_W;
   const ad = Math.abs(d);
   if (ad <= edge) return T.py[i] + d * Math.tan(T.bank[i]);

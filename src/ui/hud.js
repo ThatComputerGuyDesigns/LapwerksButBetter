@@ -8,7 +8,7 @@ export class HUD {
     root.innerHTML = `
       <div class="hud-tl">
         <div class="hud-card timing">
-          <div class="lapline"><span class="lbl">LAP</span><span class="lapnum">1</span><span class="inv" hidden>INVALID</span></div>
+          <div class="lapline"><span class="pos" hidden></span><span class="lbl">LAP</span><span class="lapnum">1</span><span class="inv" hidden>INVALID</span></div>
           <div class="cur">0:00.000</div>
           <div class="delta"></div>
           <div class="rows">
@@ -18,6 +18,7 @@ export class HUD {
           <div class="sectors"><i></i><i></i><i></i></div>
         </div>
       </div>
+      <div class="board" hidden></div>
       <div class="hud-tr">
         <button class="icon-btn hud-pause" title="Pause (Esc)"><svg viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg></button>
       </div>
@@ -132,7 +133,26 @@ export class HUD {
     const L = session.lap;
     const t = L.start != null ? session.time - L.start : 0;
     this.set('.cur', 'text', formatTime(t));
-    this.set('.lapnum', 'text', String(session.lapsDone + 1));
+    const F = session.field;
+    const laps = session.raceCfg?.laps;
+    this.set('.lapnum', 'text', laps ? `${Math.min(session.lapsDone + (session.lap.start != null ? 1 : 0), laps) || 1}/${laps}` : String(session.lapsDone + 1));
+    this.set('.pos', 'hidden', !F);
+    this.set('.board', 'hidden', !F);
+    if (F) {
+      this.boardT = (this.boardT || 0) + 1;
+      if (this.boardT % 6 === 0 || !this.standings) this.standings = F.standings();
+      const st = this.standings;
+      const me = st.findIndex((r) => r.isPlayer);
+      this.set('.pos', 'text', `P${me + 1}/${st.length}`);
+      if (this.boardT % 6 === 0) {
+        const lead = st[0].progress;
+        const html = st.map((r, k) => {
+          const gap = k === 0 ? 'Leader' : r.finished != null ? 'Finished' : `+${((lead - r.progress) / Math.max(session.car.speed, 25)).toFixed(1)}s`;
+          return `<div class="${r.isPlayer ? 'me' : ''}"><b>${k + 1}</b><i style="background:${r.paint}"></i><span>${r.name}</span><em>${gap}</em></div>`;
+        }).join('');
+        if (html !== this.lastBoard) { this.q('.board').innerHTML = html; this.lastBoard = html; }
+      }
+    }
     this.set('.inv', 'hidden', !L.invalid);
     this.set('.last', 'text', session.lastLap ? formatTime(session.lastLap.time) : '–:––.–––');
     this.set('.best', 'text', session.best ? formatTime(session.best.time) : '–:––.–––');
@@ -160,6 +180,12 @@ export class HUD {
       const gp = session.ghostMesh.position;
       g.fillStyle = '#8fd3ff';
       g.beginPath(); g.arc(gp.x * mm.s + mm.ox, gp.z * mm.s + mm.oz, 6, 0, Math.PI * 2); g.fill();
+    }
+    if (F) for (const r of F.cars) {
+      g.fillStyle = r.setup.paint;
+      g.strokeStyle = 'rgba(0,0,0,0.6)';
+      g.lineWidth = 2;
+      g.beginPath(); g.arc(r.car.x * mm.s + mm.ox, r.car.z * mm.s + mm.oz, 7, 0, Math.PI * 2); g.fill(); g.stroke();
     }
     const x = car.x * mm.s + mm.ox, y = car.z * mm.s + mm.oz;
     g.save();

@@ -4,11 +4,12 @@ import '@fontsource-variable/saira';
 import './ui/styles.css';
 import * as THREE from 'three';
 import { World, buildTerrain, buildVegetation, THEMES } from './world/environment.js';
-import { buildTrackScene } from './world/trackMesh.js';
+import { buildTrackScene, runoffHeight, sampleHF } from './world/trackMesh.js';
+import { buildGrass } from './world/grass.js';
 import { buildTrack, buildHeightfield } from './track/track.js';
 import { computeRacingLine, speedProfile } from './track/racingLine.js';
 import { PRESETS, presetById } from './track/presets.js';
-import { DEFAULT_SETUP, makeCarParams } from './physics/carSetup.js';
+import { DEFAULT_SETUP, makeCarParams, setGripLevel } from './physics/carSetup.js';
 import { ASSIST_PRESETS } from './physics/vehicle.js';
 import { DriveSession } from './game/drive.js';
 import { Input } from './game/input.js';
@@ -23,7 +24,7 @@ const VERSION = '0.1.0';
 const $ = (s) => document.querySelector(s);
 
 const DEFAULT_SETTINGS = {
-  assists: 'casual', gearbox: 'auto', units: 'kmh', quality: 'auto', volume: 0.8, showLine: true, ghost: true, camera: 'chase',
+  assists: 'casual', grip: 'arcade', race: { mode: 'race', laps: 3, rivals: 5, difficulty: 'medium' }, gearbox: 'auto', units: 'kmh', quality: 'auto', volume: 0.8, showLine: true, ghost: true, camera: 'chase',
 };
 
 class App {
@@ -32,6 +33,7 @@ class App {
     if (!store.get('migratedEasy', false)) { this.settings.assists = 'casual'; store.set('migratedEasy', true); }
     this.setup = { ...DEFAULT_SETUP, ...store.get('setup', {}) };
     this.store = store;
+    setGripLevel(this.settings.grip);
     this.world = new World($('#gl'));
     this.input = new Input();
     this.hud = new HUD($('#hud'), this);
@@ -89,6 +91,14 @@ class App {
     this.world.content.add(this.trackGroup);
     this.world.content.add(buildTerrain(T));
     this.world.content.add(buildVegetation(T, { density: this.world.quality === 'low' ? 0.5 : 1 }));
+    if (this.world.quality !== 'low') {
+      const grass = buildGrass(T, (i, d, x, z) => {
+        const wall = T.half + (d >= 0 ? T.runL[i] : T.runR[i]);
+        return Math.abs(d) <= wall + 3 ? runoffHeight(T, i, d) : sampleHF(T.heightfield, x, z);
+      }, { density: this.world.quality === 'high' ? 1 : 0.6 });
+      this.world.content.add(grass);
+      this.world.grassUniforms = grass.userData.uniforms;
+    }
     this.hud.setTrack(T);
     this.updateHomeCard();
     void keepSession;
@@ -96,7 +106,7 @@ class App {
 
   // ------------------------------------------------------------ screens
   hideAll() {
-    for (const id of ['home', 'reveal', 'hud', 'pause', 'settings', 'circuits']) $('#' + id).hidden = true;
+    for (const id of ['home', 'reveal', 'hud', 'pause', 'settings', 'circuits', 'modes', 'results']) $('#' + id).hidden = true;
     if (this.editor.active) this.editor.close();
     if (this.garage.active) this.garage.close();
     this.input.captureKeys = false;
@@ -120,7 +130,9 @@ class App {
     this.hideAll();
     this.screen = 'race';
     if (this.session) this.session.dispose();
-    this.session = new DriveSession(this, { mode: 'race' });
+    setGripLevel(this.settings.grip);
+    const R = this.settings.race || DEFAULT_SETTINGS.race;
+    this.session = new DriveSession(this, { mode: 'race', race: R.mode === 'race' ? { laps: R.laps, rivals: R.rivals, difficulty: R.difficulty } : null });
     $('#hud').hidden = false;
     this.hud.setTouch(this.isTouch());
     this.input.captureKeys = true;
@@ -145,6 +157,7 @@ class App {
     $('#' + id).hidden = false;
     if (id === 'settings') this.renderSettings();
     if (id === 'circuits') this.renderCircuits();
+    if (id === 'modes') this.renderModes();
   }
 
   closeOverlay(id) {
@@ -249,6 +262,8 @@ class App {
       <h4>Driving</h4>
       <div class="field"><span>Assists</span>${seg('assists', [['casual', 'Easy'], ['sport', 'Sport'], ['pro', 'Pro']])}
         <div class="desc">${{ casual: 'Best for keyboard & touch. Keys ask for a turn and the car finds the grip; full ABS, traction and stability control; auto-recovery if you get stuck.', sport: 'Same keyboard-friendly steering with lighter traction and stability control — you can feel and use the slide.', pro: 'No aids, direct steering. Best with a gamepad or wheel.' }[S.assists]}</div></div>
+      <div class="field"><span>Grip</span>${seg('grip', [['arcade', 'Arcade'], ['sport', 'Sport'], ['real', 'Realistic']])}
+        <div class="desc">${{ arcade: 'Sharper turning and much stronger brakes than real cars. Most fun.', sport: 'A bit more grip and braking than real life.', real: 'True-to-life tyre grip and braking distances.' }[S.grip]} Applies from the next session.</div></div>
       <div class="field"><span>Gearbox</span>${seg('gearbox', [['auto', 'Automatic'], ['manual', 'Manual']])}</div>
       ${sw('showLine', 'Driving line')}
       ${sw('ghost', 'Best-lap ghost')}
@@ -290,6 +305,47 @@ class App {
       if (S.gearbox === 'manual') car.assists.autoShift = false;
       this.session.lineMesh.visible = S.showLine && car.assists.line;
     }
+  }
+
+  // ------------------------------------------------------------ mode picker & results
+  renderModes() {
+    const R = (this.settings.race = { ...DEFAULT_SETTINGS.race, ...(this.settings.race || {}) });
+    const seg = (key, opts) => `<div class="seg small" data-race="${key}">${opts.map(([v, l]) => `<button data-v="${v}" class="${String(R[key]) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+    $('.modes-body').innerHTML = `
+      <div class="mode-cards">
+        <button class="mode-card ${R.mode === 'race' ? 'on' : ''}" data-mode="race"><b>Race</b><small>Grid start against AI rivals. Fight for position.</small></button>
+        <button class="mode-card ${R.mode === 'trial' ? 'on' : ''}" data-mode="trial"><b>Time trial</b><small>Just you, the clock and your ghost.</small></button>
+      </div>
+      <div class="race-opts" ${R.mode === 'race' ? '' : 'hidden'}>
+        <div class="field"><span>Laps</span>${seg('laps', [[2, '2'], [3, '3'], [5, '5'], [10, '10']])}</div>
+        <div class="field"><span>Rivals</span>${seg('rivals', [[3, '3'], [5, '5'], [7, '7']])}</div>
+        <div class="field"><span>Rival skill</span>${seg('difficulty', [['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard']])}</div>
+      </div>
+      <div class="mode-foot"><span class="mode-track">${this.trackDef.name} · ${(this.track.length / 1000).toFixed(2)} km</span><button class="btn primary big" data-start><svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg>Start</button></div>`;
+    const body = $('.modes-body');
+    body.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { audio.click(); R.mode = b.dataset.mode; this.saveSettings(); this.renderModes(); }));
+    body.querySelectorAll('[data-race]').forEach((sg) => sg.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-v]');
+      if (!b) return;
+      audio.click();
+      const k = sg.dataset.race;
+      R[k] = k === 'difficulty' ? b.dataset.v : parseInt(b.dataset.v);
+      this.saveSettings();
+      this.renderModes();
+    }));
+    body.querySelector('[data-start]').addEventListener('click', () => { audio.click(); this.startRace(); });
+  }
+
+  onRaceFinish(session) {
+    if (this.session !== session || this.screen !== 'race') return;
+    const st = session.field.standings();
+    const winner = st[0];
+    $('.results-body').innerHTML = `
+      <div class="res-head">${st.findIndex((r) => r.isPlayer) === 0 ? '<span class="trophy">🏆</span> Victory' : `You finished P${st.findIndex((r) => r.isPlayer) + 1}`}</div>
+      <div class="res-table">${st.map((r, k) => `<div class="${r.isPlayer ? 'me' : ''}"><b>${k + 1}</b><i style="background:${r.paint}"></i><span>${r.name}</span><em>${r.finished != null ? formatTime(r.finished) : 'running'}</em><small>best ${r.best != null ? formatTime(r.best) : '—'}</small></div>`).join('')}</div>`;
+    void winner;
+    $('#results').hidden = false;
+    this.input.captureKeys = false;
   }
 
   // ------------------------------------------------------------ circuits UI
@@ -381,7 +437,7 @@ class App {
       const go = e.target.closest('[data-go]')?.dataset.go;
       if (!go) return;
       audio.click();
-      if (go === 'drive') this.startRace();
+      if (go === 'drive') this.openOverlay('modes');
       else if (go === 'studio') this.openStudio(null);
       else if (go === 'garage') this.openGarage();
       else this.openOverlay(go);
@@ -405,7 +461,16 @@ class App {
       else if (a === 'garage') this.openGarage();
       else if (a === 'exit') this.showHome();
     });
-    for (const id of ['settings', 'circuits']) {
+    $('#results').addEventListener('click', (e) => {
+      const a = e.target.closest('[data-res]')?.dataset.res;
+      if (!a) return;
+      audio.click();
+      $('#results').hidden = true;
+      if (a === 'again') this.startRace();
+      else if (a === 'modes') { this.showHome(); this.openOverlay('modes'); }
+      else this.showHome();
+    });
+    for (const id of ['settings', 'circuits', 'modes']) {
       $('#' + id).addEventListener('click', (e) => {
         if (e.target.closest('[data-close]') || e.target === $('#' + id)) { audio.click(); this.closeOverlay(id); }
       });
@@ -425,10 +490,14 @@ class App {
       if (e.code === 'Escape') {
         if (!$('#settings').hidden) return this.closeOverlay('settings');
         if (!$('#circuits').hidden) return this.closeOverlay('circuits');
+        if (!$('#modes').hidden) return this.closeOverlay('modes');
         if (this.screen === 'race') return this.togglePause();
         if (this.screen === 'garage' || this.screen === 'reveal') return this.showHome();
       }
-      if (e.code === 'Enter' && this.screen === 'home' && $('#settings').hidden && $('#circuits').hidden && document.activeElement?.dataset?.go !== undefined === false) this.startRace();
+      if (e.code === 'Enter' && this.screen === 'home' && $('#settings').hidden && $('#circuits').hidden) {
+        if ($('#modes').hidden) this.openOverlay('modes'); else this.startRace();
+        e.preventDefault();
+      }
       if (e.code === 'Enter' && this.screen === 'reveal') this.startRace();
     });
     // orbit camera drag
