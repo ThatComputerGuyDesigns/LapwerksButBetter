@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#0b0e13" />
+    <meta name="description" content="Kerbstone — draw a race track, build your car, and race it. Sim-cade handling in your browser." />
+    <title>Kerbstone</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b0e13'/%3E%3Cpath d='M14 44 L30 20 L38 20 L22 44Z' fill='%23ff5a1f'/%3E%3Cpath d='M30 44 L46 20 L54 20 L38 44Z' fill='%23fff'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <canvas id="gl"></canvas>
+
+    <!-- loading -->
+    <div id="loader" class="loader">
+      <div class="brand-mark big"><i></i><i></i><i></i></div>
+      <div class="loader-text">Building circuit…</div>
+      <div class="loader-bar"><i></i></div>
+    </div>
+
+    <!-- home -->
+    <section id="home" class="screen home" hidden>
+      <div class="home-left">
+        <div class="brand">
+          <div class="brand-mark"><i></i><i></i><i></i></div>
+          <div>
+            <h1>KERBSTONE</h1>
+            <p class="tag">Draw it. Build it. Race it.</p>
+          </div>
+        </div>
+        <nav class="menu">
+          <button class="menu-item primary" data-go="drive">
+            <svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z" /></svg>
+            <span><b>Drive</b><small class="drive-sub">Current circuit</small></span>
+            <kbd>Enter</kbd>
+          </button>
+          <button class="menu-item" data-go="studio">
+            <svg viewBox="0 0 24 24"><path d="M4 20c4-1 6-3 8-7s4-7 8-8" /></svg>
+            <span><b>Track Studio</b><small>Draw a new circuit</small></span>
+          </button>
+          <button class="menu-item" data-go="garage">
+            <svg viewBox="0 0 24 24"><path d="M3 15l2-5h14l2 5v4H3z" /><circle cx="7.5" cy="17.5" r="1.5" /><circle cx="16.5" cy="17.5" r="1.5" /></svg>
+            <span><b>Garage</b><small>Build &amp; tune your car</small></span>
+          </button>
+          <button class="menu-item" data-go="circuits">
+            <svg viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="7" rx="1.5" /><rect x="14" y="4" width="7" height="7" rx="1.5" /><rect x="3" y="13" width="7" height="7" rx="1.5" /><rect x="14" y="13" width="7" height="7" rx="1.5" /></svg>
+            <span><b>Circuits</b><small>Presets, saved &amp; shared</small></span>
+          </button>
+          <button class="menu-item" data-go="settings">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1" /></svg>
+            <span><b>Settings</b><small>Assists, controls, graphics</small></span>
+          </button>
+        </nav>
+      </div>
+      <div class="home-card glass">
+        <span class="eyebrow">Now on track</span>
+        <h3 class="hc-name"></h3>
+        <canvas class="hc-thumb" width="220" height="140"></canvas>
+        <div class="hc-stats"></div>
+      </div>
+      <div class="home-foot">v<span class="ver"></span> · Keyboard, gamepad &amp; touch</div>
+    </section>
+
+    <!-- track studio -->
+    <section id="studio" class="screen" hidden></section>
+
+    <!-- garage -->
+    <section id="garage" class="screen" hidden></section>
+
+    <!-- reveal card -->
+    <section id="reveal" class="screen reveal" hidden>
+      <div class="reveal-card glass">
+        <span class="eyebrow">Circuit ready</span>
+        <h2 class="rv-name"></h2>
+        <div class="rv-stats"></div>
+        <div class="rv-actions">
+          <button class="btn primary big" data-rv="drive"><svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z" /></svg>Drive it</button>
+          <button class="btn ghost" data-rv="edit">Keep editing</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- race hud -->
+    <section id="hud" class="hud" hidden></section>
+
+    <!-- overlays -->
+    <section id="pause" class="overlay" hidden>
+      <div class="panel glass">
+        <h2>Paused</h2>
+        <div class="stack">
+          <button class="btn primary" data-p="resume">Resume</button>
+          <button class="btn" data-p="restart">Restart session</button>
+          <button class="btn" data-p="camera">Change camera <kbd>C</kbd></button>
+          <button class="btn" data-p="settings">Settings</button>
+          <button class="btn" data-p="edit">Edit this circuit</button>
+          <button class="btn" data-p="garage">Garage</button>
+          <button class="btn ghost" data-p="exit">Exit to menu</button>
+        </div>
+        <div class="keys">
+          <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows drive</span>
+          <span><kbd>Space</kbd> handbrake</span>
+          <span><kbd>E</kbd>/<kbd>Q</kbd> shift (manual)</span>
+          <span><kbd>R</kbd> reset car</span>
+          <span><kbd>C</kbd> camera</span>
+          <span><kbd>L</kbd> driving line</span>
+          <span><kbd>G</kbd> ghost</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="settings" class="overlay" hidden>
+      <div class="panel glass wide">
+        <div class="panel-head"><h2>Settings</h2><button class="icon-btn" data-close><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg></button></div>
+        <div class="settings-grid"></div>
+      </div>
+    </section>
+
+    <section id="circuits" class="overlay" hidden>
+      <div class="panel glass wide tall">
+        <div class="panel-head"><h2>Circuits</h2><button class="icon-btn" data-close><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg></button></div>
+        <div class="import-row">
+          <input class="import-code" placeholder="Paste a share link or code to import a circuit" />
+          <button class="btn" data-import>Import</button>
+        </div>
+        <div class="circuit-list"></div>
+      </div>
+    </section>
+
+    <div id="toast" class="toast"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
