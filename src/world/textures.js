@@ -73,8 +73,8 @@ export function asphaltTextures() {
     for (let x = 0; x < W; x++) {
       const n1 = tn((x / W) * 32, (y / H) * 64, 3);
       const grain = R();
-      let v = 58 + n1 * 18 + (grain - 0.5) * 34;
-      if (grain > 0.985) v += 40; // bright aggregate
+      let v = 50 + n1 * 14 + (grain - 0.5) * 16;
+      if (grain > 0.99) v += 26; // bright aggregate
       if (grain < 0.02) v -= 22;
       const i = (y * W + x) * 4;
       a.data[i] = v; a.data[i + 1] = v * 1.01; a.data[i + 2] = v * 1.04; a.data[i + 3] = 255;
@@ -102,7 +102,7 @@ export function asphaltTextures() {
   const res = {
     map: toTex(albedo),
     roughnessMap: toTex(rough, { srgb: false }),
-    normalMap: toTex(normalFromHeight(hb, W, H, 3), { srgb: false }),
+    normalMap: toTex(normalFromHeight(hb, W, H, 1.2), { srgb: false }),
   };
   cache.set('asphalt', res);
   return res;
