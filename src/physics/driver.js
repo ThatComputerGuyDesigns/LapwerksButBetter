@@ -26,10 +26,9 @@ export class AIDriver {
     const kappa = (2 * Math.sin(-ang)) / Math.max(dist, 1);
     let delta = Math.atan(car.p.wheelbase * kappa * -1);
     const beta = Math.atan2(car.v, Math.max(u, 1));
-    delta += beta * 0.85; // steer into the slide
+    delta += beta * 0.85 * (1 - car.assists.steer * 0.9); // steer into the slide (assist does part of it)
     delta += (car.r - u * kappa * -1) * 0.04 * 0; // (reserved: yaw-rate feedback)
-    const lock = car.p.maxSteer / (1 + (u / 38) ** 2 * (0.35 + 0.65 * car.assists.steer));
-    const steer = clamp(delta / lock, -1, 1);
+    const steer = car.steerInputFor(delta);
 
     // speed: look slightly ahead (brake reaction)
     const kv = Math.round((4 + u * 0.12) / T.DS);

@@ -153,6 +153,14 @@ export class DriveSession {
       }
       if (steps === 16) this.acc = 0;
       this.timing();
+      // Easy: if the car is stuck off the road or facing backwards, put it back
+      if (this.mode === 'race' && this.app.settings.assists === 'casual') {
+        const T2 = this.T;
+        const backwards = Math.cos(car.heading - Math.atan2(T2.tx[car.hint], T2.tz[car.hint])) < -0.3;
+        const stuck = car.speed < 3 && (Math.abs(car.q.d) > T2.half + 2 || backwards);
+        this.stuckT = stuck ? (this.stuckT || 0) + dt : 0;
+        if (this.stuckT > 2.5) { car.recover(); this.stuckT = 0; this.message('BACK ON TRACK', '', 1); }
+      }
     }
 
     // ----- visuals

@@ -18,6 +18,8 @@ import { SURF, SURF_GRIP, SURF_DRAG } from '../track/track.js';
 const G = 9.81;
 const RHO = 1.225;
 const AMBIENT = 24;
+/** Handling constants (exported so the tuning scripts can sweep them). */
+export const TUNE = { rearMu: 1.04, rearAlpha: 0.84, slipLock: 1.5, counterGain: 0.9, escGain: 3, yawFb: 2.5 };
 
 // normalised magic-formula: peak value 1 at s = 1, tends to `slide` for big s
 function makeCurve(slide) {
@@ -29,8 +31,8 @@ function makeCurve(slide) {
 
 export const ASSIST_PRESETS = {
   casual: { abs: 1, tcs: 1, steer: 1, stability: 1, autoShift: true, brakeHelp: true, line: true },
-  sport: { abs: 1, tcs: 0.6, steer: 0.6, stability: 0.4, autoShift: true, brakeHelp: false, line: true },
-  pro: { abs: 0, tcs: 0, steer: 0.15, stability: 0, autoShift: false, brakeHelp: false, line: false },
+  sport: { abs: 1, tcs: 0.7, steer: 0.8, stability: 0.7, autoShift: true, brakeHelp: false, line: true },
+  pro: { abs: 0, tcs: 0, steer: 0.3, stability: 0, autoShift: false, brakeHelp: false, line: false },
 };
 
 export class Vehicle {
@@ -119,15 +121,23 @@ export class Vehicle {
     const u = this.u, v = this.v, r = this.r;
     const absU = Math.abs(u);
     const steerIn = clamp(input.steer || 0, -1, 1);
-    const lock = p.maxSteer / (1 + (absU / 38) ** 2 * (0.35 + 0.65 * A.steer));
-    let target = steerIn * lock;
-    if (A.steer > 0 && absU > 4) {
-      const betaF = Math.atan2(v + r * p.a, Math.max(absU, 1)) * sign(u || 1);
-      const ap = p.tire.alphaPeak * 1.08;
-      const assisted = clamp(steerIn * p.maxSteer, betaF - ap, betaF + ap);
-      const w = smoothstep(5, 16, absU) * A.steer;
-      target = lerp(target, assisted, w);
+    const sm = this.steerMap();
+    // input = demand on the tyres: full lock at speed asks for peak front grip,
+    // and (with assist) the wheels are referenced to where the front axle is
+    // actually travelling, which gives natural, automatic countersteer.
+    let target = steerIn * sm.lock + sm.counter;
+    // yaw-rate steering assist: input requests a turn rate (up to the grip
+    // limit); the wheel angle is solved for it with feedback, so the car can
+    // neither over-rotate (automatic countersteer) nor get stuck pushing.
+    if (sm.yawW > 0) {
+      const ur = Math.max(absU, 1);
+      const rd = steerIn * sm.rTarget;
+      const ff = Math.atan((p.wheelbase * rd) / ur) * (1 + 0.004 * ur);
+      const fb = (rd - r) * TUNE.yawFb * (p.wheelbase / ur) * ur * 0.1;
+      const yawSteer = ff + fb;
+      target = lerp(target, yawSteer, sm.yawW);
     }
+    target = clamp(target, -p.maxSteer, p.maxSteer);
     const rate = p.steerRate * (steerIn === 0 ? 1.4 : 1);
     this.steer += clamp(target - this.steer, -rate * dt, rate * dt);
 
@@ -238,10 +248,10 @@ export class Vehicle {
       surfaceWorst = Math.max(surfaceWorst, surf);
       const tempF = this.tempGrip(w.temp);
       const loadF = 1 - 0.08 * (w.load / 3500 - 1);
-      const mu = tire.mu * SURF_GRIP[surf] * tempF * loadF;
+      const mu = tire.mu * SURF_GRIP[surf] * tempF * loadF * (w.front ? 1 : TUNE.rearMu);
       const Fz = w.load;
       const denom = Math.max(Math.abs(vl), 1.0);
-      const kp = tire.kappaPeak, ap = tire.alphaPeak * (w.front ? 1 : 0.86);
+      const kp = tire.kappaPeak, ap = tire.alphaPeak * (w.front ? 1 : TUNE.rearAlpha);
 
       // implicit wheel spin integration
       const slip0 = (w.omega * R - vl) / denom;
@@ -298,8 +308,15 @@ export class Vehicle {
     // stability assist: gentle yaw damping when the rear lets go
     if (A.stability > 0 && absU > 8) {
       const beta = Math.atan2(v, absU);
-      const over = Math.abs(beta) - 0.09;
+      const over = Math.abs(beta) - 0.05;
       if (over > 0 && sign(r) === -sign(beta)) Mz -= r * p.inertia * 2.2 * A.stability * Math.min(over * 6, 1);
+    }
+
+    // ESC: cap yaw rate at what the tyres can actually sustain
+    if (A.stability > 0 && absU > 6) {
+      const rMax = (this.steerMap().aMax / absU) * 1.12;
+      const ex = Math.abs(r) - rMax;
+      if (ex > 0) Mz -= Math.sign(r) * ex * p.inertia * TUNE.escGain * A.stability / dt * dt * 10;
     }
 
     // aero + resistance
@@ -332,6 +349,36 @@ export class Vehicle {
     this.collide(q);
     this.offTrack = Math.abs(q.d) > this.track.half + 1.2;
     this.surface = q.surface;
+  }
+
+  /** Steering map shared by player input and the AI. */
+  steerMap() {
+    const p = this.p, A = this.assists;
+    const absU = Math.abs(this.u);
+    const ap = p.tire.alphaPeak;
+    const down = 0.5 * RHO * p.aero.clA * this.u * this.u;
+    const aMax = p.tire.mu * G * (1 + down / (p.mass * G));
+    // speed-sensitive lock: full input ≈ kinematic angle for the grip limit
+    // plus the peak slip angle (a little more without assists)
+    const lock = Math.min(p.maxSteer, Math.atan((p.wheelbase * aMax) / Math.max(absU * absU, 1)) + ap * (TUNE.slipLock - 0.35 * A.steer));
+    // countersteer: point the wheels along the slide once the body slips
+    const beta = Math.atan2(this.v, Math.max(absU, 1)) * sign(this.u || 1);
+    const excess = Math.sign(beta) * Math.max(0, Math.abs(beta) - 0.035);
+    const counter = absU > 5 ? excess * TUNE.counterGain * A.steer : 0;
+    const rTarget = Math.min(aMax * 0.97 / Math.max(absU, 1), Math.tan(p.maxSteer) * Math.max(absU, 1) / p.wheelbase);
+    const yawW = smoothstep(3, 9, absU) * smoothstep(0.45, 0.95, A.steer);
+    return { lock, counter, aMax, rTarget, yawW };
+  }
+
+  /** Inverse of the steering map: input needed for a wheel angle. */
+  steerInputFor(delta) {
+    const sm = this.steerMap();
+    if (sm.yawW > 0.5) {
+      // invert the yaw request approximately: wheel angle → requested turn rate
+      const ur = Math.max(Math.abs(this.u), 1);
+      return clamp((Math.tan(delta) * ur) / this.p.wheelbase / Math.max(sm.rTarget, 1e-3), -1, 1);
+    }
+    return clamp((delta - sm.counter) / Math.max(sm.lock, 1e-3), -1, 1);
   }
 
   surfaceAt(q, d) {

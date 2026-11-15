@@ -3,6 +3,7 @@
 import { buildTrack, buildHeightfield } from '../src/track/track.js';
 import { PRESETS } from '../src/track/presets.js';
 import { runLap } from './lapsim.mjs';
+import { keyLap } from './keylap.mjs';
 import { decodeTrack, encodeTrack } from '../src/game/store.js';
 import { strokeToControlPoints } from '../src/track/spline.js';
 import { formatTime } from '../src/core/math.js';
@@ -24,6 +25,15 @@ for (const p of PRESETS) {
   const r = runLap(T, { body: 'gt', compound: 'sport' }, { assists: 'sport', laps: 2 });
   const ratio = r.best / r.theoretical;
   check(r.best != null && ratio < 1.1 && r.spins <= 1, `${p.name}: lap ${formatTime(r.best)} (ideal ${formatTime(r.theoretical)}, ${((ratio - 1) * 100).toFixed(1)}% off, spins ${r.spins})`);
+}
+
+// 2b. a crude keyboard player (on/off keys, 150 ms reactions) must get round
+//     every preset without spinning or leaving the road on Easy and Sport
+for (const assist of ['casual', 'sport']) {
+  for (const p of PRESETS) {
+    const r = keyLap(p, assist);
+    check(r.laps.length === 2 && r.spins === 0 && r.offs <= 1, `keyboard ${assist === 'casual' ? 'Easy' : 'Sport'} · ${p.name}: ${r.laps.map(formatTime).join(' / ')} · spins ${r.spins} · offs ${r.offs}`);
+  }
 }
 
 // 3. car ordering: slicks beat street tyres, prototype beats hatch

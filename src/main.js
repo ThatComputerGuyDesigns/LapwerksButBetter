@@ -23,12 +23,13 @@ const VERSION = '0.1.0';
 const $ = (s) => document.querySelector(s);
 
 const DEFAULT_SETTINGS = {
-  assists: 'sport', gearbox: 'auto', units: 'kmh', quality: 'auto', volume: 0.8, showLine: true, ghost: true, camera: 'chase',
+  assists: 'casual', gearbox: 'auto', units: 'kmh', quality: 'auto', volume: 0.8, showLine: true, ghost: true, camera: 'chase',
 };
 
 class App {
   constructor() {
     this.settings = { ...DEFAULT_SETTINGS, ...store.get('settings', {}) };
+    if (!store.get('migratedEasy', false)) { this.settings.assists = 'casual'; store.set('migratedEasy', true); }
     this.setup = { ...DEFAULT_SETUP, ...store.get('setup', {}) };
     this.store = store;
     this.world = new World($('#gl'));
@@ -246,8 +247,8 @@ class App {
     const sw = (key, label) => `<div class="toggle"><span>${label}</span><button class="switch ${S[key] ? 'on' : ''}" data-switch="${key}" aria-pressed="${!!S[key]}"></button></div>`;
     g.innerHTML = `
       <h4>Driving</h4>
-      <div class="field"><span>Assists</span>${seg('assists', [['casual', 'Casual'], ['sport', 'Sport'], ['pro', 'Pro']])}
-        <div class="desc">${{ casual: 'ABS, traction & stability control, strong steering help.', sport: 'ABS, light traction control and steering help. Slides are yours to catch.', pro: 'No aids. Manage weight transfer, wheelspin and lock-ups yourself.' }[S.assists]}</div></div>
+      <div class="field"><span>Assists</span>${seg('assists', [['casual', 'Easy'], ['sport', 'Sport'], ['pro', 'Pro']])}
+        <div class="desc">${{ casual: 'Best for keyboard & touch. Keys ask for a turn and the car finds the grip; full ABS, traction and stability control; auto-recovery if you get stuck.', sport: 'Same keyboard-friendly steering with lighter traction and stability control — you can feel and use the slide.', pro: 'No aids, direct steering. Best with a gamepad or wheel.' }[S.assists]}</div></div>
       <div class="field"><span>Gearbox</span>${seg('gearbox', [['auto', 'Automatic'], ['manual', 'Manual']])}</div>
       ${sw('showLine', 'Driving line')}
       ${sw('ghost', 'Best-lap ghost')}
