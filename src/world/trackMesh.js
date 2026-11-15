@@ -25,6 +25,8 @@ function runoffHeight(T, i, d) {
   return he - (0.06 * Math.min(ad - edge, 4)) / 4 - t * 0.35;
 }
 
+function pos3(T, i, d, h) { return pos(T, i, d, h); }
+
 function pos(T, i, d, h) {
   return [T.px[i] + T.nx[i] * d, h, T.pz[i] + T.nz[i] * d];
 }
@@ -234,6 +236,47 @@ export function buildTrackScene(T, line) {
     postPositions.forEach((p, k) => { m4.makeTranslation(p[0], p[1], p[2]); posts.setMatrixAt(k, m4); });
     posts.castShadow = true;
     group.add(posts);
+  }
+
+  // ---------------- tyre walls on the outside of tight corners
+  {
+    const pos = [];
+    for (let i = 0; i < N; i += 1) {
+      if (Math.abs(T.curv[i]) < 1 / 75) continue;
+      const side = T.curv[i] > 0 ? -1 : 1; // outside of the turn
+      for (let k = -12; k <= 22; k++) {
+        const j = (i + k + N) % N;
+        if ((side > 0 ? !T.wallL[j] : !T.wallR[j]) || T.deck[j]) continue;
+        pos.push([j, side]);
+      }
+    }
+    const seen = new Set();
+    const mats = [], cols = [];
+    const tyreCols = [new THREE.Color(0x111214), new THREE.Color(0xe8e8e8), new THREE.Color(0xc8202a)];
+    for (const [j, side] of pos) {
+      const key = j * 2 + (side > 0 ? 1 : 0);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const run = side > 0 ? T.runL[j] : T.runR[j];
+      for (let row = 0; row < 2; row++) {
+        const d = side * (T.half + run - 0.45 - row * 0.62);
+        const base = runoffHeight(T, j, d);
+        const band = Math.floor(j / 6) % 2 ? 1 : 2;
+        for (let h = 0; h < 3; h++) {
+          const p = pos3(T, j, d, base + 0.11 + h * 0.21);
+          mats.push(new THREE.Matrix4().makeTranslation(p[0], p[1], p[2]));
+          cols.push(h === 2 ? tyreCols[band] : tyreCols[0]);
+        }
+      }
+    }
+    if (mats.length) {
+      const geo = new THREE.CylinderGeometry(0.31, 0.31, 0.2, 14, 1, false);
+      const mat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0 });
+      const im = new THREE.InstancedMesh(geo, mat, mats.length);
+      mats.forEach((m, k) => { im.setMatrixAt(k, m); im.setColorAt(k, cols[k]); });
+      im.castShadow = true; im.receiveShadow = true;
+      group.add(im);
+    }
   }
 
   // ---------------- bridge decks: slab underside + pillars

@@ -4,6 +4,8 @@ import { buildTrack, buildHeightfield } from '../src/track/track.js';
 import { PRESETS } from '../src/track/presets.js';
 import { runLap } from './lapsim.mjs';
 import { keyLap } from './keylap.mjs';
+import { response } from './response.mjs';
+import { BODIES } from '../src/physics/carSetup.js';
 import { decodeTrack, encodeTrack } from '../src/game/store.js';
 import { strokeToControlPoints } from '../src/track/spline.js';
 import { formatTime } from '../src/core/math.js';
@@ -36,6 +38,18 @@ for (const assist of ['casual', 'sport']) {
   }
 }
 
+// 2c. responsiveness ("not a boat"): quick turn-in, controlled overshoot
+for (const V of [28, 45]) {
+  const r = response({}, 'casual', V);
+  check(r.t90 < 0.25 && r.overshoot < 0.35, `turn-in @${Math.round(V * 3.6)} km/h: 90% yaw in ${r.t90.toFixed(2)} s, overshoot ${(r.overshoot * 100).toFixed(0)}%`);
+}
+
+// 2d. every car in the garage is drivable on a keyboard (Easy)
+for (const id of Object.keys(BODIES)) {
+  const r = keyLap(PRESETS[0], 'casual', 0.9, { body: id, compound: BODIES[id].compound });
+  check(r.laps.length === 2 && r.spins === 0 && r.offs <= 1, `keyboard Easy · ${BODIES[id].name}: ${r.laps.map(formatTime).join(' / ')} · spins ${r.spins} · offs ${r.offs}`);
+}
+
 // 3. car ordering: slicks beat street tyres, prototype beats hatch
 {
   const T = buildTrack(PRESETS[0]);
@@ -44,6 +58,8 @@ for (const assist of ['casual', 'sport']) {
   check(slick < street, `slicks (${formatTime(slick)}) faster than street (${formatTime(street)})`);
   const hatch = lap({ body: 'hatch', compound: 'sport' }), proto = lap({ body: 'proto', compound: 'sport' });
   check(proto < hatch, `prototype (${formatTime(proto)}) faster than hatch (${formatTime(hatch)})`);
+  const f1 = lap({ body: 'formula', compound: 'slick' }), gt3 = lap({ body: 'gt3', compound: 'slick' });
+  check(f1 < gt3, `open-wheeler (${formatTime(f1)}) faster than GT3 (${formatTime(gt3)})`);
 }
 
 // 4. share codes round-trip

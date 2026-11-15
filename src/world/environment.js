@@ -6,13 +6,14 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { buildHeightfield } from '../track/track.js';
+import { makeGradePass, makeClouds } from './post.js';
 import { rng, smoothstep, clamp } from '../core/math.js';
 import * as TX from './textures.js';
 
 export const THEMES = {
-  golden: { name: 'Golden Hour', elevation: 11, azimuth: 235, turbidity: 6, rayleigh: 2.2, mie: 0.006, sun: 0xffd2a1, sunI: 3.4, hemiSky: 0xbcd3ff, hemiGround: 0x5a4a32, hemiI: 0.55, fog: 0xc9b9a6, exposure: 0.62, envI: 0.9 },
-  midday: { name: 'Midday', elevation: 52, azimuth: 160, turbidity: 3, rayleigh: 1.2, mie: 0.004, sun: 0xfff6e8, sunI: 3.6, hemiSky: 0xcfe2ff, hemiGround: 0x4b5a3a, hemiI: 0.6, fog: 0xbcd0e6, exposure: 0.48, envI: 1.0 },
-  dusk: { name: 'Dusk', elevation: 3.5, azimuth: 280, turbidity: 8, rayleigh: 3, mie: 0.01, sun: 0xff9a6b, sunI: 2.4, hemiSky: 0x9aa8d6, hemiGround: 0x3b2c2a, hemiI: 0.55, fog: 0xa88f9a, exposure: 0.85, envI: 0.85 },
+  golden: { name: 'Golden Hour', elevation: 11, azimuth: 235, turbidity: 6, rayleigh: 2.2, mie: 0.006, sun: 0xffd2a1, sunI: 3.4, hemiSky: 0xbcd3ff, hemiGround: 0x5a4a32, hemiI: 0.55, fog: 0xc9b9a6, exposure: 0.62, envI: 0.9, clouds: 0.5 },
+  midday: { name: 'Midday', elevation: 52, azimuth: 160, turbidity: 3, rayleigh: 1.2, mie: 0.004, sun: 0xfff6e8, sunI: 3.6, hemiSky: 0xcfe2ff, hemiGround: 0x4b5a3a, hemiI: 0.6, fog: 0xbcd0e6, exposure: 0.48, envI: 1.0, clouds: 0.42 },
+  dusk: { name: 'Dusk', elevation: 3.5, azimuth: 280, turbidity: 8, rayleigh: 3, mie: 0.01, sun: 0xff9a6b, sunI: 2.4, hemiSky: 0x9aa8d6, hemiGround: 0x3b2c2a, hemiI: 0.55, fog: 0xa88f9a, exposure: 0.85, envI: 0.85, clouds: 0.38 },
 };
 
 export class World {
@@ -35,6 +36,8 @@ export class World {
     this.sky = new Sky();
     this.sky.scale.setScalar(10000);
     this.scene.add(this.sky);
+    this.clouds = makeClouds();
+    this.scene.add(this.clouds);
     this.sunDir = new THREE.Vector3();
 
     // lights
@@ -66,6 +69,8 @@ export class World {
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.32, 0.45, 2.2);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
+    this.grade = makeGradePass();
+    this.composer.addPass(this.grade);
   }
 
   setQuality(q) {
@@ -108,7 +113,12 @@ export class World {
     this.hemi.groundColor.set(t.hemiGround);
     this.hemi.intensity = t.hemiI;
     this.renderer.toneMappingExposure = t.exposure;
-    this.scene.fog = new THREE.FogExp2(t.fog, 0.00055);
+    const cu = this.clouds.material.uniforms;
+    cu.sunDir.value.copy(this.sunDir);
+    cu.sunCol.value.set(t.sun).lerp(new THREE.Color(1, 1, 1), 0.35);
+    cu.shade.value.set(t.fog).multiplyScalar(0.75);
+    cu.cover.value = t.clouds ?? 0.45;
+    this.scene.fog = new THREE.FogExp2(t.fog, 0.00036);
     // image based lighting from the sky
     const envScene = new THREE.Scene();
     const sky2 = new Sky();
@@ -147,6 +157,13 @@ export class World {
         if (o.geometry) o.geometry.dispose();
       });
     }
+  }
+
+  /** Per-frame cosmetic updates (clouds drift, speed blur). */
+  tick(dt, speed = 0) {
+    this.clouds.material.uniforms.time.value += dt;
+    this.clouds.position.copy(this.camera.position);
+    this.grade.uniforms.speed.value += ((speed > 45 ? Math.min((speed - 45) / 40, 1) : 0) - this.grade.uniforms.speed.value) * Math.min(1, dt * 3);
   }
 
   render() {

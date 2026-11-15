@@ -27,8 +27,14 @@ assets: every texture, model and sound is generated in code.
   - engine torque curve, gearbox, clutch launch and limited-slip diff
   - assists: ABS with EBD, traction control, a stability aid, and steering help that limits
     front slip angle and allows natural countersteer. Three presets: Casual, Sport and Pro.
-- **Garage.** Three bodies, tyre compounds, drivetrain swap, paint, finish, livery, number
-  and rims. Nine tuning settings. Performance figures (0–100, top speed, grip) come from
+- **Garage: ten real-world car types** with true-to-life specs and original names:
+  - an F1-style open-wheeler (800 kg, about 1000 hp, around 3.4 g)
+  - a rear-engined flat-six sports car and a GT3 racer
+  - an AWD hypercar, an endurance prototype and a front-engined GT
+  - a muscle car, a JDM tuner, a rally car and a hot hatch
+
+  Each car has its own gearbox, grip, aero, body roll and engine sound. You can also change
+  tyre compound, drivetrain, paint, finish, livery, number and rims. Nine tuning settings. Performance figures (0–100, top speed, grip) come from
   running the real physics model.
 - **Racing.** Start lights, lap and sector timing, a live delta, track limits, a ghost of your
   best lap, saved personal bests, a colour-coded driving line, five cameras, tyre smoke,
@@ -46,6 +52,8 @@ npm test        # regression checks (run in CI before every deploy)
 npm run sim     # AI lap simulation on every preset → lap time vs theoretical optimum,
                 # peak g, spins, off-tracks, tyre temps   (--all-cars, --sport, --svg)
 node sim/skidpad.mjs gt 25   # steady-state ramp-steer test (understeer gradient, limit g)
+node sim/response.mjs        # turn-in speed / overshoot / slip ("is it a boat?")
+node sim/keylap.mjs casual   # a crude keyboard player (on/off keys, 150 ms reactions) on every track
 ```
 
 With Sport assists, the AI driver laps every preset within about 2–4% of the

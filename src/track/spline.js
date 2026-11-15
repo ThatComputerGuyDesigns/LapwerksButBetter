@@ -57,6 +57,16 @@ export function smoothClosed(pts, iterations = 2, k = 0.5) {
   return p;
 }
 
+/** Convex hull (monotone chain), returns CCW points. */
+export function convexHull(points) {
+  const p = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], up = [];
+  for (const q of p) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+  for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (up.length >= 2 && cross(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
+
 /** Signed area (positive = counter-clockwise in x/z as drawn on screen). */
 export function signedArea(pts) {
   let a = 0;
@@ -79,8 +89,9 @@ export function strokeToControlPoints(stroke, { spacing = 45 } = {}) {
   const L = polylineLength(pts, true);
   if (L < 300) return null;
   pts = resamplePolyline(pts, 4, true);
-  pts = smoothClosed(pts, 6, 0.6);
-  const ctrlSpacing = clamp(L / 64, 22, spacing);
+  // light smoothing only removes hand jitter; corners keep their character
+  pts = smoothClosed(pts, 3, 0.5);
+  const ctrlSpacing = clamp(L / 110, 14, spacing * 0.7);
   pts = resamplePolyline(pts, ctrlSpacing, true);
   return pts;
 }

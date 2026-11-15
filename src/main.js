@@ -496,6 +496,7 @@ class App {
       this.session.update(dt, cmd);
       if (scr === 'race') this.hud.update(this.session, this.settings);
     }
+    this.world.tick(dt, scr === 'race' && this.session ? this.session.car.speed : 0);
     this.world.render();
     this.adaptQuality(dt);
   }

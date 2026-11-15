@@ -12,7 +12,7 @@ import { clamp, lerp, smoothstep } from '../core/math.js';
 const PROFILES = {
   gt: {
     frontOH: 0.98, rearOH: 0.9, clearance: 0.13, n: 3.2,
-    body: [[0, 0.86, 0.66], [0.05, 0.95, 0.86], [0.16, 1.0, 0.9], [0.32, 0.98, 0.88], [0.5, 0.96, 0.84], [0.66, 0.96, 0.79], [0.82, 0.97, 0.72], [0.93, 0.93, 0.64], [1, 0.8, 0.5]],
+    body: [[0, 0.86, 0.66], [0.05, 0.95, 0.86], [0.16, 1.0, 0.9], [0.32, 0.98, 0.88], [0.5, 0.96, 0.84], [0.66, 0.96, 0.79], [0.82, 0.96, 0.7], [0.92, 0.88, 0.6], [0.97, 0.76, 0.52], [1, 0.62, 0.46]],
     cabin: { t0: 0.2, t1: 0.66, roof: 1.24, peakA: 0.36, peakB: 0.47, baseW: 0.84, topW: 0.62, roofPaint: true },
     wing: 'lip',
   },
@@ -31,19 +31,19 @@ const PROFILES = {
   // rear-engined flat-six sports car: long sloping roof, wide hips, round lamps
   rs: {
     frontOH: 0.92, rearOH: 1.15, clearance: 0.12, n: 3.0, hips: 0.09, lights: 'round',
-    body: [[0, 0.84, 0.8], [0.06, 0.94, 0.86], [0.18, 1.0, 0.86], [0.32, 0.97, 0.84], [0.5, 0.93, 0.82], [0.66, 0.95, 0.78], [0.8, 0.98, 0.74], [0.92, 0.9, 0.62], [1, 0.72, 0.5]],
+    body: [[0, 0.84, 0.8], [0.06, 0.94, 0.86], [0.18, 1.0, 0.86], [0.32, 0.97, 0.84], [0.5, 0.93, 0.82], [0.66, 0.95, 0.78], [0.8, 0.96, 0.72], [0.9, 0.86, 0.6], [0.96, 0.74, 0.52], [1, 0.58, 0.44]],
     cabin: { t0: 0.06, t1: 0.66, roof: 1.28, peakA: 0.46, peakB: 0.52, baseW: 0.82, topW: 0.6, roofPaint: true },
     wing: 'duck',
   },
   gt3: {
     frontOH: 1.0, rearOH: 1.15, clearance: 0.08, n: 2.9, hips: 0.14, lights: 'round',
-    body: [[0, 0.88, 0.8], [0.06, 0.98, 0.86], [0.18, 1.0, 0.86], [0.32, 0.95, 0.84], [0.5, 0.9, 0.82], [0.66, 0.95, 0.78], [0.8, 1.0, 0.74], [0.92, 0.93, 0.6], [1, 0.76, 0.42]],
+    body: [[0, 0.88, 0.8], [0.06, 0.98, 0.86], [0.18, 1.0, 0.86], [0.32, 0.95, 0.84], [0.5, 0.9, 0.82], [0.66, 0.95, 0.78], [0.8, 0.98, 0.7], [0.9, 0.88, 0.56], [0.96, 0.76, 0.46], [1, 0.6, 0.38]],
     cabin: { t0: 0.06, t1: 0.66, roof: 1.25, peakA: 0.46, peakB: 0.52, baseW: 0.78, topW: 0.56, roofPaint: true },
     wing: 'swan', splitter: 1.4,
   },
   hyper: {
     frontOH: 1.05, rearOH: 0.9, clearance: 0.08, n: 2.6, hips: 0.1,
-    body: [[0, 0.92, 0.82], [0.06, 1.0, 0.9], [0.2, 1.0, 0.86], [0.36, 0.86, 0.74], [0.5, 0.84, 0.7], [0.64, 0.94, 0.72], [0.8, 0.98, 0.66], [0.93, 0.9, 0.5], [1, 0.72, 0.36]],
+    body: [[0, 0.92, 0.82], [0.06, 1.0, 0.9], [0.2, 1.0, 0.86], [0.36, 0.86, 0.74], [0.5, 0.84, 0.7], [0.64, 0.94, 0.72], [0.8, 0.96, 0.62], [0.9, 0.86, 0.5], [0.96, 0.74, 0.4], [1, 0.58, 0.32]],
     cabin: { t0: 0.3, t1: 0.74, roof: 1.15, peakA: 0.44, peakB: 0.55, baseW: 0.64, topW: 0.45, roofPaint: true },
     wing: 'big', splitter: 1.2,
   },
@@ -55,7 +55,7 @@ const PROFILES = {
   },
   jdm: {
     frontOH: 0.86, rearOH: 0.82, clearance: 0.12, n: 3.6,
-    body: [[0, 0.9, 0.82], [0.06, 0.97, 0.88], [0.2, 1.0, 0.88], [0.4, 0.98, 0.85], [0.6, 0.97, 0.82], [0.8, 0.98, 0.76], [0.93, 0.93, 0.66], [1, 0.8, 0.52]],
+    body: [[0, 0.9, 0.82], [0.06, 0.97, 0.88], [0.2, 1.0, 0.88], [0.4, 0.98, 0.85], [0.6, 0.97, 0.82], [0.8, 0.97, 0.74], [0.92, 0.9, 0.64], [0.97, 0.8, 0.56], [1, 0.66, 0.5]],
     cabin: { t0: 0.17, t1: 0.66, roof: 1.3, peakA: 0.3, peakB: 0.48, baseW: 0.85, topW: 0.66, roofPaint: true },
     wing: 'gtwing',
   },
@@ -109,7 +109,7 @@ export function createCar(setup) {
     iridescenceIOR: 1.6,
     envMapIntensity: 1.25,
   });
-  const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x0a0e14, metalness: 0.2, roughness: 0.04, clearcoat: 1, clearcoatRoughness: 0.02, envMapIntensity: 1.8 });
+  const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x1a222c, metalness: 0.2, roughness: 0.04, clearcoat: 1, clearcoatRoughness: 0.02, envMapIntensity: 1.8 });
   const blackMat = new THREE.MeshStandardMaterial({ color: 0x0c0d0f, roughness: 0.55, metalness: 0.2 });
   const carbonMat = new THREE.MeshPhysicalMaterial({ color: 0x15171a, roughness: 0.35, metalness: 0.3, clearcoat: 0.8, clearcoatRoughness: 0.15 });
   const chromeMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.12, metalness: 1 });
@@ -172,7 +172,7 @@ export function createCar(setup) {
   };
   const cabin = lofted(cabinPt, 60, 36, [glassMat, paintMat], {
     capScale: [0.6, 0], capOffset: [0.0, 0.0], zF, zR,
-    group: C.roofPaint ? (tc, theta) => (Math.abs(theta - Math.PI / 2) < 0.95 && tc > 0.18 && tc < 0.72 ? 1 : 0) : null,
+    group: C.roofPaint ? (tc, theta) => (Math.abs(theta - Math.PI / 2) < 1.2 && tc > 0.14 && tc < 0.74 ? 1 : 0) : null,
     noCaps: false,
   });
   body.add(cabin);
@@ -193,17 +193,17 @@ export function createCar(setup) {
 
   // ---------------- lights
   const tmp = new THREE.Vector3();
-  const headMat = new THREE.MeshStandardMaterial({ color: 0xeaf2ff, emissive: 0xd8e6ff, emissiveIntensity: 1.6, roughness: 0.1, metalness: 0.5 });
+  const headMat = new THREE.MeshPhysicalMaterial({ color: 0xdfe6ee, emissive: 0xd8e6ff, emissiveIntensity: 0.55, roughness: 0.05, metalness: 0.6, clearcoat: 1 });
   const tailMat = new THREE.MeshStandardMaterial({ color: 0x400000, emissive: 0xff1a12, emissiveIntensity: 0.9, roughness: 0.25 });
   const revMat = new THREE.MeshStandardMaterial({ color: 0x777777, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.2 });
   for (const sx of [1, -1]) {
     const tH = 0.955;
     sectionPt(tH, sx > 0 ? 0.45 : Math.PI - 0.45, tmp);
     const round = P.lights === 'round';
-    const hl = new THREE.Mesh(round ? new THREE.SphereGeometry(0.105, 20, 14) : new THREE.CapsuleGeometry(0.05, 0.3, 6, 12), headMat);
+    const hl = new THREE.Mesh(round ? new THREE.SphereGeometry(0.085, 20, 14) : new THREE.CapsuleGeometry(0.035, 0.26, 6, 12), headMat);
     if (round) { hl.scale.set(1, 1, 0.55); } else { hl.rotation.z = Math.PI / 2; }
     hl.rotation.y = sx * 0.35;
-    hl.position.copy(tmp).add(new THREE.Vector3(-sx * 0.04, 0.0, 0.02));
+    hl.position.copy(tmp).add(new THREE.Vector3(-sx * 0.05, -0.01, -0.03));
     body.add(hl);
     const drl = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.018, 0.02), headMat);
     drl.position.copy(tmp).add(new THREE.Vector3(-sx * 0.05, -0.07, 0.03));
