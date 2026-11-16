@@ -10,6 +10,32 @@ assets: every texture, model and sound is generated in code.
 
 ## What's in this build
 
+- **Race Control.** AI drivers race and you are the race director and stewards.
+  - **Incidents are detected automatically:** contacts (the simulation works out fault and
+    severity, and checks whether the victim lost out), track-limit strikes, spins, and cars
+    stopped on or off the track.
+  - **Review room:** replay any incident from TV, car or overhead angles, with ¼× slow motion
+    and a scrubber.
+  - **Rulings:** no further action, warning, 5 s, 10 s, drive-through or disqualification.
+    Penalties appear in the timing tower and the final classification.
+  - **Race direction:** sector yellows, Virtual Safety Car, a real Safety Car that bunches the
+    field and leads it to a green restart, and red flags.
+  - **TV direction:** auto-cuts to battles, or click any driver in the tower to follow them.
+  - **Scoring:** you're graded on consistency against what really happened, and on safety
+    (for example, leaving a stopped car uncovered costs points).
+- **Career.** Five championships: Rookie Cup, Club Sports, GT Masters, Endurance Prototypes
+  and Grand Prix.
+  - Event types: races, time trials with gold, silver and bronze targets, overtake challenges
+    (start last), and duels.
+  - Earn stars, credits, XP and levels. Buy cars at the dealership; star totals unlock the
+    higher tiers.
+- **Smarter AI and racing features.**
+  - Every driver has a personality: pace, braking point, consistency and aggression.
+  - Drivers make mistakes, defend into corners, commit to overtakes and leave a car's width
+    side by side.
+  - Slipstream drafting for every car.
+  - **Hold Backspace to rewind**; rewinding marks the current lap invalid.
+
 - **Track Studio.** Draw a loop with mouse, finger or pen and it morphs into a smooth circuit.
   Sharp kinks are relaxed to a drivable radius, and the start line goes on the longest straight.
   You can drag, add or remove control points, and set width, elevation, banking and scenery.

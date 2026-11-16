@@ -9,11 +9,13 @@ import { buildGrass } from './world/grass.js';
 import { buildTrack, buildHeightfield } from './track/track.js';
 import { computeRacingLine, speedProfile } from './track/racingLine.js';
 import { PRESETS, presetById } from './track/presets.js';
-import { DEFAULT_SETUP, makeCarParams, setGripLevel } from './physics/carSetup.js';
+import { DEFAULT_SETUP, makeCarParams, setGripLevel, BODIES } from './physics/carSetup.js';
 import { ASSIST_PRESETS } from './physics/vehicle.js';
 import { DriveSession } from './game/drive.js';
 import { ControlSession } from './game/controlSession.js';
 import { RaceControlUI } from './ui/raceControlUI.js';
+import { Career, findEvent, eventTrackDef } from './game/career.js';
+import { CareerUI, money, stars } from './ui/careerUI.js';
 import { Input } from './game/input.js';
 import { store, trackHash, encodeTrack, decodeTrack } from './game/store.js';
 import { audio } from './audio/audio.js';
@@ -42,6 +44,8 @@ class App {
     this.editor = new TrackEditor(this, $('#studio'));
     this.garage = new Garage(this, $('#garage'));
     this.rcui = new RaceControlUI(this, $('#rc'));
+    this.career = new Career(store);
+    this.careerUI = new CareerUI(this, $('#career'));
     this.screen = 'loading';
     this.session = null;
     this.lastT = performance.now();
@@ -109,7 +113,7 @@ class App {
 
   // ------------------------------------------------------------ screens
   hideAll() {
-    for (const id of ['home', 'reveal', 'hud', 'pause', 'settings', 'circuits', 'modes', 'results', 'rc', 'rcsetup', 'rcreport']) $('#' + id).hidden = true;
+    for (const id of ['home', 'reveal', 'hud', 'pause', 'settings', 'circuits', 'modes', 'results', 'rc', 'rcsetup', 'rcreport', 'career']) $('#' + id).hidden = true;
     setGripLevel(this.settings.grip); // race control runs on realistic grip; restore yours
     if (this.editor.active) this.editor.close();
     if (this.garage.active) this.garage.close();
@@ -132,6 +136,8 @@ class App {
   }
 
   async startRace() {
+    this.lastCareer = false;
+    this.careerEvent = null;
     this.hideAll();
     this.screen = 'race';
     if (this.session) this.session.dispose();
@@ -342,6 +348,75 @@ class App {
     body.querySelector('[data-start]').addEventListener('click', () => { audio.click(); this.startRace(); });
   }
 
+  // ------------------------------------------------------------ career
+  openCareer() {
+    this.hideAll();
+    this.screen = 'careerhub';
+    this.careerEvent = null;
+    if (!this.session || this.session.mode !== 'attract') this.startAttract();
+    this.careerUI.open();
+  }
+
+  async startCareerEvent(eventId, body) {
+    const { tier, event } = findEvent(eventId);
+    const def = eventTrackDef(event, PRESETS);
+    this.careerUI.close();
+    $('#loader').hidden = false; $('#loader').classList.remove('fade');
+    $('.loader-text').textContent = `${tier.name} · ${event.name}`;
+    await new Promise((r) => setTimeout(r, 30));
+    this.setup = { ...this.setup, body, compound: BODIES[body].compound, drivetrain: null };
+    this.saveSetup();
+    await this.loadTrack(def);
+    $('#loader').classList.add('fade');
+    setTimeout(() => ($('#loader').hidden = true), 500);
+    this.careerEvent = { eventId, tier, event };
+    this.lastCareer = true;
+    const race = event.type === 'trial' ? null : {
+      laps: event.laps, rivals: event.type === 'duel' ? 1 : event.rivals, difficulty: tier.difficulty,
+      rivalBodies: tier.cls, playerSlot: event.type === 'overtake' ? 'last' : 'mid', duel: event.type === 'duel',
+    };
+    const ideal = this.line.profile.lapTime;
+    const trial = event.type === 'trial' ? { laps: event.laps, targets: [ideal * 1.07, ideal * 1.12, ideal * 1.18] } : null;
+    this.hideAll();
+    this.screen = 'race';
+    if (this.session) this.session.dispose();
+    setGripLevel(this.settings.grip);
+    this.session = new DriveSession(this, { mode: 'race', race, trial });
+    if (trial) this.session.message(`Targets  ★ ${formatTime(trial.targets[2])}  ★★ ${formatTime(trial.targets[1])}  ★★★ ${formatTime(trial.targets[0])}`, '', 5);
+    $('#hud').hidden = false;
+    this.hud.setTouch(this.isTouch());
+    this.input.captureKeys = true;
+    await audio.unlock();
+  }
+
+  /** Career result → rewards panel (appended to the results overlay). */
+  careerRewards(result) {
+    const ev = this.careerEvent;
+    if (!ev) return '';
+    const R = this.career.record(ev.eventId, result);
+    this.careerEvent = null;
+    return `<div class="cr-rewards"><span class="cr-big-stars">${stars(R.stars)}</span>
+      <div><b>+${money(R.credits)}</b><small>credits</small></div><div><b>+${R.xp} XP</b><small>${R.levelUp ? `Level up! Lv ${R.levelUp}` : `Lv ${this.career.level}`}</small></div>
+      ${R.unlocked.length ? `<p class="cr-unlock">Unlocked: ${R.unlocked.join(', ')}</p>` : ''}</div>`;
+  }
+
+  setResultButtons() {
+    $('[data-res=again]').textContent = this.lastCareer ? 'Back to career' : 'Race again';
+    $('[data-res=modes]').hidden = !!this.lastCareer;
+  }
+
+  onTrialFinish(session) {
+    if (this.session !== session || this.screen !== 'race') return;
+    const tc = session.trialCfg;
+    const best = session.raceBest;
+    $('.results-body').innerHTML = `<div class="res-head">${best != null ? `Best lap ${formatTime(best)}` : 'No valid lap'}</div>
+      <div class="res-table">${['★★★ Gold', '★★ Silver', '★ Bronze'].map((n, k) => `<div class="${best != null && best <= tc.targets[k] ? 'me' : ''}"><b></b><i></i><span>${n}</span><em>${formatTime(tc.targets[k])}</em></div>`).join('')}</div>
+      ${this.careerRewards({ bestLap: best, targets: tc.targets })}`;
+    this.setResultButtons();
+    $('#results').hidden = false;
+    this.input.captureKeys = false;
+  }
+
   // ------------------------------------------------------------ race control
   renderRcSetup() {
     const C = (this.settings.rc = { ...DEFAULT_SETTINGS.rc, ...(this.settings.rc || {}) });
@@ -401,8 +476,10 @@ class App {
     const winner = st[0];
     $('.results-body').innerHTML = `
       <div class="res-head">${st.findIndex((r) => r.isPlayer) === 0 ? '<span class="trophy">🏆</span> Victory' : `You finished P${st.findIndex((r) => r.isPlayer) + 1}`}</div>
-      <div class="res-table">${st.map((r, k) => `<div class="${r.isPlayer ? 'me' : ''}"><b>${k + 1}</b><i style="background:${r.paint}"></i><span>${r.name}</span><em>${r.finished != null ? formatTime(r.finished) : 'running'}</em><small>best ${r.best != null ? formatTime(r.best) : '—'}</small></div>`).join('')}</div>`;
+      <div class="res-table">${st.map((r, k) => `<div class="${r.isPlayer ? 'me' : ''}"><b>${k + 1}</b><i style="background:${r.paint}"></i><span>${r.name}</span><em>${r.finished != null ? formatTime(r.finished) : 'running'}</em><small>best ${r.best != null ? formatTime(r.best) : '—'}</small></div>`).join('')}</div>
+      ${this.careerRewards({ position: st.findIndex((r) => r.isPlayer) + 1, gridPos: session.field.gridPos, bestLap: session.raceBest, overtakes: Math.max(0, session.field.gridPos - (st.findIndex((r) => r.isPlayer) + 1)) })}`;
     void winner;
+    this.setResultButtons();
     $('#results').hidden = false;
     this.input.captureKeys = false;
   }
@@ -498,6 +575,7 @@ class App {
       audio.click();
       if (go === 'drive') this.openOverlay('modes');
       else if (go === 'control') this.openOverlay('rcsetup');
+      else if (go === 'career') this.openCareer();
       else if (go === 'studio') this.openStudio(null);
       else if (go === 'garage') this.openGarage();
       else this.openOverlay(go);
@@ -526,6 +604,7 @@ class App {
       if (!a) return;
       audio.click();
       $('#results').hidden = true;
+      if (this.lastCareer && a !== 'menu') { this.openCareer(); return; }
       if (a === 'again') this.startRace();
       else if (a === 'modes') { this.showHome(); this.openOverlay('modes'); }
       else this.showHome();

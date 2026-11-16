@@ -89,6 +89,22 @@ export class Vehicle {
 
   get speed() { return Math.hypot(this.u, this.v); }
 
+  /** Full dynamic state for rewind. */
+  snapshot() {
+    return {
+      x: this.x, z: this.z, y: this.y, heading: this.heading, u: this.u, v: this.v, r: this.r, ax: this.ax, ay: this.ay,
+      steer: this.steer, gear: this.gear, rpm: this.rpm, shiftTimer: this.shiftTimer, hint: this.hint, tcsCut: this.tcsCut, time: this.time,
+      w: this.wheels.map((w) => [w.omega, w.temp, w.core, w.brakeMod, w.spin]),
+    };
+  }
+
+  restore(sn) {
+    Object.assign(this, { x: sn.x, z: sn.z, y: sn.y, heading: sn.heading, u: sn.u, v: sn.v, r: sn.r, ax: sn.ax, ay: sn.ay, steer: sn.steer, gear: sn.gear, rpm: sn.rpm, shiftTimer: sn.shiftTimer, hint: sn.hint, tcsCut: sn.tcsCut, time: sn.time });
+    sn.w.forEach((a, k) => { const w = this.wheels[k]; [w.omega, w.temp, w.core, w.brakeMod, w.spin] = a; });
+    this.q = this.track.query(this.x, this.z, this.hint);
+    this.lastImpact = 0;
+  }
+
   worldVel() {
     const fx = Math.sin(this.heading), fz = Math.cos(this.heading), lx = Math.cos(this.heading), lz = -Math.sin(this.heading);
     return [fx * this.u + lx * this.v, fz * this.u + lz * this.v];

@@ -85,6 +85,25 @@ for (const [a, min] of [['casual', 45], ['sport', 35], ['pro', 15]]) {
   check(+r.turnedDeg >= min, `full brake + full steer (${a}): turned ${r.turnedDeg}°, front locked ${r.frontLockedPct}%`);
 }
 
+// 2h. rewind: snapshot → restore → identical replay
+{
+  const { Vehicle, ASSIST_PRESETS } = await import('../src/physics/vehicle.js');
+  const { makeCarParams } = await import('../src/physics/carSetup.js');
+  const T = buildTrack(PRESETS[0]);
+  const car = new Vehicle(makeCarParams({}), T);
+  car.assists = { ...ASSIST_PRESETS.casual };
+  car.reset(0, 0);
+  const drive = (n, k0) => { for (let k = 0; k < n; k++) car.step(1 / 240, { throttle: 1, brake: 0, steer: Math.sin((k + k0) / 90) * 0.5 }); };
+  drive(480, 0);
+  const snap = car.snapshot();
+  drive(240, 480);
+  const a = [car.x, car.z, car.u];
+  car.restore(snap);
+  drive(240, 480);
+  const err = Math.hypot(car.x - a[0], car.z - a[1]) + Math.abs(car.u - a[2]);
+  check(err < 1e-6, `rewind restore is deterministic (error ${err.toExponential(1)})`);
+}
+
 // 3. car ordering: slicks beat street tyres, prototype beats hatch
 {
   const T = buildTrack(PRESETS[0]);

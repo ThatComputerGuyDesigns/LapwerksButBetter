@@ -17,7 +17,7 @@ const PHYS_DT = 1 / 240;
 export const CAMERAS = ['chase', 'near', 'hood', 'bumper', 'orbit'];
 
 export class DriveSession {
-  constructor(app, { mode = 'race', race = null } = {}) {
+  constructor(app, { mode = 'race', race = null, trial = null } = {}) {
     this.app = app;
     this.world = app.world;
     this.T = app.track;
@@ -59,6 +59,7 @@ export class DriveSession {
     this.lapsDone = 0;
     this.msgs = [];
     this.raceCfg = mode === 'race' ? race : null;
+    this.trialCfg = mode === 'race' ? trial : null; // career time trial: {laps, targets}
     this.field = this.raceCfg ? new RaceField(this, this.raceCfg) : null;
     this.resetToGrid();
   }
@@ -135,7 +136,19 @@ export class DriveSession {
     else if (input) cmd = input;
 
     if (this.paused) { this.updateCamera(dt); return; }
-    this.time += dt;
+    // ----- rewind: hold to roll the race back (up to ~15 s)
+    if (this.mode === 'race' && this.state === 'running' && input?.rewind && this.history?.length > 1) {
+      this.rewinding = true;
+      this.rewindAcc = (this.rewindAcc || 0) + dt * 2; // 2x speed
+      while (this.rewindAcc >= 0.1 && this.history.length > 1) { this.history.pop(); this.rewindAcc -= 0.1; }
+      this.restoreSnap(this.history[this.history.length - 1]);
+      this.prev = { x: car.x, z: car.z, h: car.heading };
+      this.field?.cars.forEach((r) => (r.prev = { x: r.car.x, z: r.car.z, h: r.car.heading }));
+      this.acc = 0;
+    } else {
+      if (this.rewinding) { this.rewinding = false; this.rewindsUsed = (this.rewindsUsed || 0) + 1; if (this.lap.start != null) this.lap.invalid = true; }
+    }
+    if (!this.rewinding) this.time += dt;
 
     // ----- countdown / start lights
     const lights = this.app.trackGroup?.userData.startLights;
@@ -160,7 +173,8 @@ export class DriveSession {
       this.field?.step(PHYS_DT, 0, false);
       car.rpm = lerp(car.rpm, car.p.engine.idle + thr * car.p.engine.redline * 0.75, 1 - Math.exp(-dt * 8));
       car.throttle = thr;
-    } else {
+    } else if (!this.rewinding) {
+      this.recordSnap();
       this.acc += dt;
       let steps = 0;
       while (this.acc >= PHYS_DT && steps < 16) {
@@ -215,6 +229,29 @@ export class DriveSession {
     else audio.silence();
   }
 
+  recordSnap() {
+    if (this.mode !== 'race') return;
+    this.history = this.history || [];
+    if (this.time < (this.nextSnap || 0)) return;
+    this.nextSnap = this.time + 0.1;
+    const L = this.lap;
+    this.history.push({
+      time: this.time, car: this.car.snapshot(), lapsDone: this.lapsDone, raceBest: this.raceBest, lastLap: this.lastLap,
+      lap: { ...L, sectorTimes: L.sectorTimes.slice(), splits: L.splits.slice(), ghostLen: L.ghost.length },
+      field: this.field ? this.field.cars.map((r) => ({ car: r.car.snapshot(), lapsDone: r.lapsDone, started: r.started, lastS: r.lastS, finished: r.finished, best: r.best, lapStart: r.lapStart, offset: r.offset, mistake: r.mistake })) : null,
+    });
+    if (this.history.length > 150) this.history.shift();
+  }
+
+  restoreSnap(h) {
+    this.time = h.time;
+    this.car.restore(h.car);
+    this.lapsDone = h.lapsDone; this.raceBest = h.raceBest; this.lastLap = h.lastLap;
+    const ghost = this.lap.ghost;
+    this.lap = { ...h.lap, sectorTimes: h.lap.sectorTimes.slice(), splits: h.lap.splits.slice(), ghost: h.lap.ghost === ghost ? ghost.slice(0, h.lap.ghostLen) : h.lap.ghost.slice(0, h.lap.ghostLen) };
+    if (h.field) h.field.forEach((f, k) => { const r = this.field.cars[k]; r.car.restore(f.car); Object.assign(r, { lapsDone: f.lapsDone, started: f.started, lastS: f.lastS, finished: f.finished, best: f.best, lapStart: f.lapStart, offset: f.offset, mistake: f.mistake }); });
+  }
+
   timing() {
     if (this.mode !== 'race') return;
     const car = this.car, T = this.T, L = this.lap;
@@ -260,6 +297,13 @@ export class DriveSession {
     const lapTime = t;
     this.lapsDone++;
     const valid = !L.invalid;
+    if (this.trialCfg) {
+      if (valid) this.raceBest = this.raceBest == null ? lapTime : Math.min(this.raceBest, lapTime);
+      if (this.lapsDone >= this.trialCfg.laps && this.state !== 'finished') {
+        this.state = 'finished';
+        setTimeout(() => this.app.onTrialFinish?.(this), 2000);
+      }
+    }
     if (this.raceCfg) {
       this.raceBest = this.raceBest == null ? lapTime : Math.min(this.raceBest, lapTime);
       if (this.lapsDone >= this.raceCfg.laps && this.state !== 'finished') {

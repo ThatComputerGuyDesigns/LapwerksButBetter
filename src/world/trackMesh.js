@@ -139,7 +139,8 @@ export function buildTrackScene(T, line) {
   // ---------------- runoff grass (mowed stripes run along the circuit)
   const grassT = TX.grassTextures();
   const runoffTex = TX.runoffGrassTexture();
-  const runoffMat = new THREE.MeshStandardMaterial({ map: runoffTex, normalMap: grassT.normalMap, roughness: 0.95, metalness: 0, color: 0xffffff });
+  // tinted to match the terrain's vertex-coloured grass so there is no seam
+  const runoffMat = new THREE.MeshStandardMaterial({ map: runoffTex, normalMap: grassT.normalMap, roughness: 0.97, metalness: 0, color: 0xe6eadc });
   for (const side of [1, -1]) {
     const geo = stripAlong(
       T, () => true,

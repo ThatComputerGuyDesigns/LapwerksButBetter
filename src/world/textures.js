@@ -161,9 +161,14 @@ export function runoffGrassTexture() {
   const base = grassTextures().map.image;
   ctx.drawImage(base, 0, 0, W, H);
   ctx.drawImage(base, 0, 0, W, H);
-  for (let i = 0; i < 4; i++) {
-    ctx.fillStyle = i % 2 ? 'rgba(255,255,200,0.07)' : 'rgba(0,30,0,0.08)';
-    ctx.fillRect((i * W) / 4, 0, W / 4, H);
+  // soft mowing bands (gradient edges, low contrast: no checkerboard)
+  for (let i = 0; i < 2; i++) {
+    const g = ctx.createLinearGradient((i * W) / 2, 0, ((i + 1) * W) / 2, 0);
+    g.addColorStop(0, 'rgba(255,255,210,0)');
+    g.addColorStop(0.5, i ? 'rgba(255,255,210,0.045)' : 'rgba(0,25,0,0.045)');
+    g.addColorStop(1, 'rgba(255,255,210,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect((i * W) / 2, 0, W / 2, H);
   }
   const t = toTex(c);
   cache.set('runoffGrass', t);

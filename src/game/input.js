@@ -20,7 +20,7 @@ export class Input {
       if (!this.keys.has(e.code)) this.edges.add(e.code);
       this.keys.add(e.code);
       this.source = 'keyboard';
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code) && this.captureKeys) e.preventDefault();
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Backspace'].includes(e.code) && this.captureKeys) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
     window.addEventListener('blur', () => this.keys.clear());
@@ -75,7 +75,7 @@ export class Input {
       const dz = 0.08;
       let s = Math.abs(ax) < dz ? 0 : (Math.abs(ax) - dz) / (1 - dz) * Math.sign(ax);
       s = Math.sign(s) * Math.pow(Math.abs(s), 1.6); // finer control near centre
-      return { steer: -s, throttle: Math.pow(rt, 1.2), brake: Math.pow(lt, 1.1), handbrake: btn(2) || btn(1) };
+      return { steer: -s, throttle: Math.pow(rt, 1.2), brake: Math.pow(lt, 1.1), handbrake: btn(2) || btn(1), rewind: btn(14) };
     }
     return null;
   }
@@ -88,6 +88,7 @@ export class Input {
       Object.assign(out, gp);
       out.shiftUp = this.pressed('GP_RB') || this.pressed('GP_A');
       out.shiftDown = this.pressed('GP_LB') || this.pressed('GP_X') && false;
+      out.rewind = !!gp.rewind;
       this.steer = out.steer;
     } else if (this.source === 'touch') {
       out.throttle = this.touch.throttle;
@@ -114,6 +115,7 @@ export class Input {
       out.throttle = this.throttle;
       out.brake = this.brake;
       out.handbrake = this.down('Space');
+      out.rewind = this.down('Backspace');
       out.shiftUp = this.pressed('KeyE') || this.pressed('ShiftLeft') || this.pressed('ShiftRight');
       out.shiftDown = this.pressed('KeyQ') || this.pressed('ControlLeft') || this.pressed('ControlRight');
     }

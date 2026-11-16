@@ -78,7 +78,7 @@ export class World {
     this.composer = new EffectComposer(this.renderer, rt);
     this.renderPass = new RenderPass(this.scene, this.camera);
     this.composer.addPass(this.renderPass);
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.16, 0.35, 3.2);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.12, 0.3, 5.0);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     this.grade = makeGradePass();
@@ -137,10 +137,10 @@ export class World {
     this.renderer.toneMappingExposure = t.exposure;
     const cu = this.clouds.material.uniforms;
     cu.sunDir.value.copy(this.sunDir);
-    cu.sunCol.value.set(t.sun).lerp(new THREE.Color(1, 1, 1), 0.35);
+    cu.sunCol.value.set(t.sun).lerp(new THREE.Color(1, 1, 1), 0.1).multiplyScalar(0.82);
     cu.shade.value.set(t.fog).multiplyScalar(0.75);
     cu.cover.value = t.clouds ?? 0.45;
-    this.scene.fog = new THREE.FogExp2(t.fog, 0.00036);
+    this.scene.fog = new THREE.FogExp2(new THREE.Color(t.fog).multiplyScalar(0.92), 0.00021);
     // image based lighting from the sky
     const envScene = new THREE.Scene();
     const sky2 = new Sky();

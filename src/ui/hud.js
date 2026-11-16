@@ -37,7 +37,7 @@ export class HUD {
           </div>
         </div>
       </div>
-      <div class="hud-center"><div class="flash"></div><div class="countdown"></div></div>
+      <div class="hud-center"><div class="flash"></div><div class="countdown"></div><div class="rewind-tag" hidden>⏪ REWIND</div><div class="draft-tag" hidden>SLIPSTREAM</div></div>
       <div class="touch-controls">
         <div class="touch-steer"><div class="touch-track"></div><div class="touch-knob"></div><span>STEER</span></div>
         <div class="touch-pedals"><div class="touch-brake">BRAKE</div><div class="touch-gas">GAS</div></div>
@@ -162,6 +162,8 @@ export class HUD {
     this.set('.delta', 'class', 'delta ' + (d == null ? '' : d < 0 ? 'fast' : 'slow'));
     if (L.sector === 0 && L.sectorTimes.length === 0) this.sectors.forEach((e) => (e.className = ''));
 
+    this.set('.rewind-tag', 'hidden', !session.rewinding);
+    this.set('.draft-tag', 'hidden', !((car.draft || 0) > 0.12 && car.speed > 25));
     // countdown
     const cd = this.q('.countdown');
     if (session.state === 'countdown') {
