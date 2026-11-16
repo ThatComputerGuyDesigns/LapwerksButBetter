@@ -7,7 +7,7 @@ import { rng, smoothstep, clamp, lerp } from '../core/math.js';
 function tuftGeometry() {
   // three crossed, slightly bent blades with a base→tip colour gradient
   const pos = [], col = [], idx = [];
-  const base = [0.16, 0.27, 0.1], tip = [0.55, 0.68, 0.3];
+  const base = [0.14, 0.2, 0.06], tip = [0.42, 0.48, 0.18];
   for (let b = 0; b < 3; b++) {
     const ang = (b / 3) * Math.PI;
     const ca = Math.cos(ang), sa = Math.sin(ang);
@@ -98,8 +98,8 @@ export function buildGrass(T, sampleHeight, { density = 1 } = {}) {
       sc.set(s, s * (outside ? 1.3 : 0.8), s);
       m.compose(p.set(x, y, z), q, sc);
       im.setMatrixAt(k, m);
-      c.setHSL(0.24 + R() * 0.05, 0.35, 0.36 + R() * 0.14);
-      im.setColorAt(k, c.multiplyScalar(1.05));
+      c.setHSL(0.22 + R() * 0.04, 0.42, 0.24 + R() * 0.08);
+      im.setColorAt(k, c);
     });
     im.computeBoundingSphere();
     im.receiveShadow = true;

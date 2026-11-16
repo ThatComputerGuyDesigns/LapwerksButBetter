@@ -16,6 +16,7 @@ import { computeRacingLine, speedProfile } from '../src/track/racingLine.js';
 import { analyzeTrack, referenceParams } from '../src/track/analysis.js';
 import { parseGPS, circuitFromGPS, circuitFromDescription } from '../src/track/importers.js';
 import { SURF } from '../src/track/track.js';
+import { dailyChallenge, newChampionship, recordRound, standings as champStandings } from '../src/game/challenges.js';
 import { strokeToControlPoints } from '../src/track/spline.js';
 import { formatTime } from '../src/core/math.js';
 
@@ -172,6 +173,18 @@ for (const [a, min] of [['casual', 45], ['sport', 35], ['pro', 15]]) {
   // describe
   const r = circuitFromDescription('a 2 km kart track with three hairpins', { seed: 3 });
   check(r.def.env === 'kart' && Math.abs(buildTrack(r.def).length / 1000 - 2) < 0.3, `describe → ${r.notes.join(', ')}`);
+}
+
+// 7. challenges: daily is deterministic, championship points add up
+{
+  const a = dailyChallenge('2026-01-01'), b = dailyChallenge('2026-01-01'), c = dailyChallenge('2026-01-02');
+  check(JSON.stringify(a) === JSON.stringify(b) && JSON.stringify(a.def.points) !== JSON.stringify(c.def.points), `daily challenge is the same for everyone each day (${a.def.name}, ${a.body})`);
+  const ch = newChampionship({ series: 'gt', tracks: [PRESETS[0], PRESETS[1]], rivals: 9 });
+  const names = ['You', ...ch.roster.map((r) => r.name)];
+  recordRound(ch, names, 'You');
+  recordRound(ch, names.slice().reverse(), names[1]);
+  const st = champStandings(ch);
+  check(ch.done && ch.points.You === 25 + 1 + 1 && st.length === 10 && st[0].pts >= st[9].pts, `championship scoring (You ${ch.points.You} pts, leader ${st[0].name} ${st[0].pts})`);
 }
 
 console.log(failed ? `\n${failed} check(s) failed` : '\nall checks passed');

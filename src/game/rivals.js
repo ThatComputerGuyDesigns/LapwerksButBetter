@@ -13,7 +13,7 @@ const NAMES = ['M. Okafor', 'L. Brandt', 'S. Varga', 'J. Takeda', 'R. Moreau', '
 const PACE = { easy: [0.84, 0.9], medium: [0.91, 0.955], hard: [0.965, 1.0] };
 
 export class RaceField {
-  constructor(session, { laps = 3, rivals = 5, difficulty = 'medium', rivalBodies = null, playerSlot = 'mid', duel = false, spectator = false, drama = 0.5, paceSpread = null } = {}) {
+  constructor(session, { laps = 3, rivals = 5, difficulty = 'medium', rivalBodies = null, playerSlot = 'mid', duel = false, spectator = false, drama = 0.5, paceSpread = null, roster = null } = {}) {
     this.s = session;
     this.T = session.T;
     this.laps = laps;
@@ -27,15 +27,18 @@ export class RaceField {
     const paints = PAINTS.map((p) => p.color).filter((c) => c !== setup.paint);
     const [p0, p1] = paceSpread || PACE[difficulty] || PACE.medium;
     const names = NAMES.slice().sort(() => R() - 0.5);
+    if (roster) rivals = roster.length;
     for (let k = 0; k < rivals; k++) {
+      const ro = roster?.[k];
       // mixed field: rivals drive cars from the event's class
-      const body = duel ? setup.body : rivalBodies ? rivalBodies[Math.floor(R() * rivalBodies.length)] : setup.body;
-      const st = { ...setup, body, compound: rivalBodies ? (BODIES[body]?.compound || setup.compound) : setup.compound, drivetrain: null, paint: paints[k % paints.length], accent: k % 2 ? '#f2f2f2' : '#111318', number: 10 + Math.floor(R() * 80), livery: ['stripes', 'band', 'split', 'none'][k % 4] };
+      const body = ro ? ro.body : duel ? setup.body : rivalBodies ? rivalBodies[Math.floor(R() * rivalBodies.length)] : setup.body;
+      const st = { ...setup, body, compound: rivalBodies ? (BODIES[body]?.compound || setup.compound) : setup.compound, drivetrain: null, paint: ro ? ro.paint : paints[k % paints.length], accent: k % 2 ? '#f2f2f2' : '#111318', number: ro ? ro.number : 10 + Math.floor(R() * 80), livery: ['stripes', 'band', 'split', 'none'][k % 4] };
+      if (ro) st.compound = BODIES[body]?.compound || setup.compound;
       const params = makeCarParams(st);
       const car = new Vehicle(params, this.T);
       car.assists = { ...ASSIST_PRESETS.casual, autoShift: true };
       // personality: skill (pace + braking), consistency (mistakes), aggression (racecraft)
-      const skill = duel ? 1 : k / Math.max(1, rivals - 1);
+      const skill = ro ? ro.skill : duel ? 1 : k / Math.max(1, rivals - 1);
       // drama (race control) lowers consistency and raises aggression
       const pers = { skill, consistency: clamp(0.55 + R() * 0.45 - (drama - 0.5) * 0.5, 0.15, 1), aggression: clamp(0.3 + R() * 0.7 + (drama - 0.5) * 0.4, 0.1, 1) };
       const profile = speedProfile(this.T, session.line, params, { gripScale: 0.9 + 0.07 * skill });
@@ -44,7 +47,7 @@ export class RaceField {
       const ai = new AIDriver(this.T, session.line, profile, { pace });
       const mesh = session.makeMesh ? session.makeMesh(st) : createCar(st);
       session.world.content.add(mesh);
-      this.cars.push({ name: names[k % names.length], car, ai, mesh, setup: st, pers, basePace: pace, lapsDone: 0, started: false, lastS: 0, finished: null, best: null, lapStart: null, prev: { x: 0, z: 0, h: 0 }, react: 0.08 + R() * 0.3 * (1.2 - skill * 0.5), offset: 0, mistake: 0, phase: R() * 10 });
+      this.cars.push({ name: ro ? ro.name : names[k % names.length], car, ai, mesh, setup: st, pers, basePace: pace, lapsDone: 0, started: false, lastS: 0, finished: null, best: null, lapStart: null, prev: { x: 0, z: 0, h: 0 }, react: 0.08 + R() * 0.3 * (1.2 - skill * 0.5), offset: 0, mistake: 0, phase: R() * 10 });
     }
     this.R = R;
     this.finishOrder = [];

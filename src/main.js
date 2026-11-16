@@ -9,7 +9,7 @@ import { buildGrass } from './world/grass.js';
 import { buildMountains, buildNature, buildTrackside } from './world/scenery.js';
 import { batchStatic } from './world/batch.js';
 import { buildPlacedObjects } from './world/objects.js';
-import { envOf } from './track/environments.js';
+import { envOf, ENVIRONMENTS } from './track/environments.js';
 import { buildTrack, buildHeightfield } from './track/track.js';
 import { computeRacingLine, speedProfile } from './track/racingLine.js';
 import { PRESETS, presetById } from './track/presets.js';
@@ -28,6 +28,8 @@ import { TrackEditor, drawThumb } from './ui/editor.js';
 import { Garage } from './ui/garage.js';
 import { formatTime, clamp } from './core/math.js';
 import { carShot } from './ui/renders.js';
+import { dailyChallenge, dayKey, endlessRound, newEndless, newChampionship, recordRound, standings as champStandings, SERIES, POINTS } from './game/challenges.js';
+import { randomTrack } from './track/generator.js';
 
 const VERSION = '0.7.0';
 const $ = (s) => document.querySelector(s);
@@ -148,6 +150,8 @@ class App {
 
   showHome() {
     this.hideAll();
+    this.challenge = null;
+    this.restoreSetup();
     audio.setVolume(this.settings.volume);
     this.screen = 'home';
     $('#home').hidden = false;
@@ -162,15 +166,18 @@ class App {
     this.session = new DriveSession(this, { mode: 'attract' });
   }
 
-  async startRace() {
+  async startRace(keepChallenge = false) {
     this.lastCareer = false;
     this.careerEvent = null;
+    if (!keepChallenge) { this.challenge = null; this.restoreSetup(); }
     this.hideAll();
     this.screen = 'race';
     if (this.session) this.session.dispose();
     setGripLevel(this.settings.grip);
     const R = this.settings.race || DEFAULT_SETTINGS.race;
-    this.session = new DriveSession(this, { mode: 'race', race: R.mode === 'race' ? { laps: R.laps, rivals: R.rivals, difficulty: R.difficulty } : null });
+    const ch = keepChallenge ? this.challenge : null;
+    this.session = ch ? new DriveSession(this, { mode: 'race', race: ch.race, trial: ch.trial }) : new DriveSession(this, { mode: 'race', race: R.mode === 'race' ? { laps: R.laps, rivals: R.rivals, difficulty: R.difficulty } : null });
+    if (ch?.intro) this.session.message(ch.intro, '', 5);
     $('#hud').hidden = false;
     this.hud.setTouch(this.isTouch());
     this.input.captureKeys = true;
@@ -503,18 +510,68 @@ class App {
   renderModes() {
     const R = (this.settings.race = { ...DEFAULT_SETTINGS.race, ...(this.settings.race || {}) });
     const seg = (key, opts) => `<div class="seg small" data-race="${key}">${opts.map(([v, l]) => `<button data-v="${v}" class="${String(R[key]) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
-    $('.modes-body').innerHTML = `
-      <div class="mode-cards">
-        <button class="mode-card ${R.mode === 'race' ? 'on' : ''}" data-mode="race"><b>Race</b><small>Grid start against AI rivals. Fight for position.</small></button>
-        <button class="mode-card ${R.mode === 'trial' ? 'on' : ''}" data-mode="trial"><b>Time trial</b><small>Just you, the clock and your ghost.</small></button>
-      </div>
-      <div class="race-opts" ${R.mode === 'race' ? '' : 'hidden'}>
+    const D = dailyChallenge();
+    const dailyBest = store.get('daily', {})[D.key];
+    const endless = store.get('endless', null);
+    const endlessBest = store.get('endlessBest', 0);
+    const ch = store.get('champ', null);
+    const cards = [
+      ['race', 'Race', 'Grid start against AI rivals.'],
+      ['trial', 'Time trial', 'You, the clock and your ghost.'],
+      ['daily', 'Daily Challenge', dailyBest != null ? `Today: ${formatTime(dailyBest)}` : 'New track and car every day.'],
+      ['endless', 'Endless', endlessBest ? `Best run: ${endlessBest} rounds` : 'Random circuits. Three lives.'],
+      ['champ', 'Championship', ch && !ch.done ? `Round ${ch.round + 1} of ${ch.rounds.length}` : 'Full season, points, standings.'],
+    ];
+    let panel = '';
+    const foot = (label, attr) => `<div class="mode-foot"><span class="mode-track">${label}</span><button class="btn primary big" ${attr}><svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg>Start</button></div>`;
+    if (R.mode === 'race' || R.mode === 'trial') {
+      panel = `<div class="race-opts" ${R.mode === 'race' ? '' : 'hidden'}>
         <div class="field"><span>Laps</span>${seg('laps', [[2, '2'], [3, '3'], [5, '5'], [10, '10']])}</div>
         <div class="field"><span>Rivals</span>${seg('rivals', [[3, '3'], [5, '5'], [7, '7']])}</div>
         <div class="field"><span>Rival skill</span>${seg('difficulty', [['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard']])}</div>
-      </div>
-      <div class="mode-foot"><span class="mode-track">${this.trackDef.name} · ${(this.track.length / 1000).toFixed(2)} km</span><button class="btn primary big" data-start><svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg>Start</button></div>`;
+      </div>${foot(`${this.trackDef.name} · ${(this.track.length / 1000).toFixed(2)} km · ${BODIES[this.setup.body]?.name}`, 'data-start')}`;
+    } else if (R.mode === 'daily') {
+      panel = `<div class="ch-intro"><canvas class="ch-thumb" width="220" height="140"></canvas><div>
+        <span class="eyebrow">${D.key}</span><h3>${D.def.name}</h3>
+        <p>Everyone gets the same circuit, car and conditions today. Three laps, best lap counts. Gold, silver and bronze targets.</p>
+        <div class="ch-facts"><span><b>${BODIES[D.body].name}</b>Car</span><span><b>${(ENVIRONMENTS[D.def.env] || ENVIRONMENTS.gp).name}</b>Venue</span><span><b>${dailyBest != null ? formatTime(dailyBest) : '—'}</b>Your best</span></div>
+      </div></div>${foot('New challenge every day at midnight', 'data-daily')}`;
+    } else if (R.mode === 'endless') {
+      const live = endless && endless.lives > 0 && endless.round > 0;
+      panel = `<div class="ch-intro"><div>
+        <h3>Endless</h3>
+        <p>A fresh random circuit every round. Finish high enough to survive — the target gets tougher and the rivals faster. Miss it and you lose a life. Three lives.</p>
+        <div class="ch-facts"><span><b>${endlessBest}</b>Best run</span>${live ? `<span><b>${endless.round}</b>Current round</span><span><b>${'♥'.repeat(endless.lives)}</b>Lives</span>` : ''}</div>
+      </div></div>
+      <div class="mode-foot"><span class="mode-track">${live ? 'Run in progress' : 'Uses your garage car'}</span>${live ? '<button class="btn" data-endless-new>New run</button>' : ''}<button class="btn primary big" data-endless><svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg>${live ? 'Continue' : 'Start run'}</button></div>`;
+    } else if (R.mode === 'champ') {
+      if (ch && !ch.done) {
+        const tbl = champStandings(ch);
+        const next = ch.rounds[ch.round].def;
+        panel = `<div class="ch-intro"><div style="flex:1">
+          <span class="eyebrow">${ch.name} · ${BODIES[ch.body]?.name}</span><h3>Round ${ch.round + 1} of ${ch.rounds.length}: ${next.name}</h3>
+          <div class="ch-rounds">${ch.rounds.map((r, k) => `<span class="${k < ch.round ? 'done' : k === ch.round ? 'next' : ''}">${k + 1}${r.result ? ` · P${r.result.order.indexOf('You') + 1}` : ''}</span>`).join('')}</div>
+          <div class="ch-table">${tbl.map((r, k) => `<div class="${r.isPlayer ? 'me' : ''}"><b>${k + 1}</b><i style="background:${r.paint || 'var(--accent)'}"></i><span>${r.name}</span><small>${r.wins ? `${r.wins} win${r.wins > 1 ? 's' : ''}` : ''}</small><em>${r.pts}</em></div>`).join('')}</div>
+        </div></div>
+        <div class="mode-foot"><button class="btn ghost" data-champ-quit>Abandon season</button><button class="btn primary big" data-champ-go><svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg>Race round ${ch.round + 1}</button></div>`;
+      } else {
+        const cs = (this.champSetup ||= { series: 'gt', rounds: 5, source: 'mixed' });
+        const sg = (key, opts) => `<div class="seg small" data-cs="${key}">${opts.map(([v, l]) => `<button data-v="${v}" class="${String(cs[key]) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+        const last = ch?.done ? champStandings(ch) : null;
+        panel = `${last ? `<div class="ch-box"><span class="ch-k">Last season · ${ch.name}</span><b>${last[0].isPlayer ? 'You were champion' : `Champion: ${last[0].name} · you P${last.findIndex((r) => r.isPlayer) + 1}`}</b></div>` : ''}
+          <div class="race-opts">
+            <div class="field"><span>Series</span>${sg('series', Object.entries(SERIES).map(([k, v]) => [k, v.name.replace(/ (Trophy|Cup|Series|World Championship|Endurance)$/, '')]))}</div>
+            <div class="field"><span>Rounds</span>${sg('rounds', [[3, '3'], [5, '5'], [8, '8']])}</div>
+            <div class="field"><span>Circuits</span>${sg('source', [['mixed', 'Featured + new'], ['mine', 'My circuits']])}</div>
+          </div>
+          <p class="ch-note">Nine AI rivals, the same grid all season. Points: ${POINTS.join('-')} plus 1 for fastest lap.</p>
+          ${foot(SERIES[cs.series].name, 'data-champ-new')}`;
+      }
+    }
+    $('.modes-body').innerHTML = `<div class="mode-cards five">${cards.map(([k, n, d]) => `<button class="mode-card ${R.mode === k ? 'on' : ''}" data-mode="${k}"><b>${n}</b><small>${d}</small></button>`).join('')}</div>${panel}`;
     const body = $('.modes-body');
+    const thumb = body.querySelector('.ch-thumb');
+    if (thumb) drawThumb(thumb, D.def.points, '#ff7a3d');
     body.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { audio.click(); R.mode = b.dataset.mode; this.saveSettings(); this.renderModes(); }));
     body.querySelectorAll('[data-race]').forEach((sg) => sg.addEventListener('click', (e) => {
       const b = e.target.closest('[data-v]');
@@ -525,7 +582,23 @@ class App {
       this.saveSettings();
       this.renderModes();
     }));
-    body.querySelector('[data-start]').addEventListener('click', () => { audio.click(); this.startRace(); });
+    body.querySelectorAll('[data-cs]').forEach((sg) => sg.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-v]');
+      if (!b) return;
+      audio.click();
+      const k = sg.dataset.cs;
+      this.champSetup[k] = k === 'rounds' ? parseInt(b.dataset.v) : b.dataset.v;
+      if (k === 'source' && b.dataset.v === 'mine' && !store.tracks().length) { this.toast('Save a circuit in Track Studio first'); this.champSetup.source = 'mixed'; }
+      this.renderModes();
+    }));
+    const on = (sel, fn) => body.querySelector(sel)?.addEventListener('click', () => { audio.click(); fn(); });
+    on('[data-start]', () => this.startRace());
+    on('[data-daily]', () => this.startDaily());
+    on('[data-endless]', () => this.startEndless(false));
+    on('[data-endless-new]', () => this.startEndless(true));
+    on('[data-champ-go]', () => this.startChampRound());
+    on('[data-champ-quit]', () => { store.set('champ', null); this.renderModes(); });
+    on('[data-champ-new]', () => { const c = this.champSetup; this.newChampionship(c.series, c.rounds, c.source); this.startChampRound(); });
   }
 
   // ------------------------------------------------------------ career
@@ -570,6 +643,112 @@ class App {
     await audio.unlock();
   }
 
+  // ------------------------------------------------------------ challenges
+  useBody(body) {
+    if (!this.setupBackup) this.setupBackup = { ...this.setup };
+    this.setup = { ...this.setup, body, compound: BODIES[body]?.compound || this.setup.compound, drivetrain: null };
+  }
+  restoreSetup() { if (this.setupBackup) { this.setup = this.setupBackup; this.setupBackup = null; } }
+
+  async runChallenge(def, label) {
+    this.closeOverlay('modes');
+    $('#loader').hidden = false; $('#loader').classList.remove('fade');
+    $('.loader-text').textContent = label;
+    this.tip();
+    await new Promise((r) => setTimeout(r, 30));
+    await this.loadTrack(def);
+    $('#loader').classList.add('fade');
+    setTimeout(() => ($('#loader').hidden = true), 500);
+    await this.startRace(true);
+  }
+
+  async startDaily() {
+    const D = dailyChallenge();
+    this.useBody(D.body);
+    const ideal = speedProfile(buildTrack(D.def), computeRacingLine(buildTrack(D.def)), makeCarParams(this.setup)).lapTime;
+    const targets = [ideal * 1.06, ideal * 1.11, ideal * 1.17];
+    this.challenge = { kind: 'daily', key: D.key, trial: { laps: D.laps, targets }, intro: `Daily Challenge · ${BODIES[D.body].name} · beat ${formatTime(targets[0])} for gold` };
+    await this.runChallenge(D.def, `Daily Challenge · ${D.key}`);
+  }
+
+  async startEndless(fresh) {
+    let st = store.get('endless', null);
+    if (fresh || !st || st.lives <= 0) st = newEndless();
+    store.set('endless', st);
+    const r = endlessRound(st);
+    this.restoreSetup();
+    this.challenge = { kind: 'endless', state: st, need: r.need, race: { laps: r.laps, rivals: r.rivals, difficulty: r.difficulty }, intro: `Round ${st.round + 1} · finish P${r.need} or better · ${'♥'.repeat(st.lives)}` };
+    await this.runChallenge(r.def, `Endless · Round ${st.round + 1}`);
+  }
+
+  newChampionship(series, rounds, source) {
+    let tracks;
+    const mine = store.tracks();
+    if (source === 'mine' && mine.length) tracks = Array.from({ length: rounds }, (_, k) => mine[k % mine.length]);
+    else {
+      const pool = [...PRESETS];
+      const seed = Math.floor(Math.random() * 1e5);
+      tracks = Array.from({ length: rounds }, (_, k) => (k < pool.length && k % 2 === 0 ? pool[(k / 2 + seed) % pool.length] : { ...randomTrack(seed + k * 31), id: `ch-${seed}-${k}` }));
+    }
+    const ch = newChampionship({ series, tracks, laps: rounds > 5 ? 3 : 4, rivals: 9, difficulty: this.settings.race?.difficulty || 'medium', playerBody: this.setup.body });
+    store.set('champ', ch);
+    return ch;
+  }
+
+  async startChampRound() {
+    const ch = store.get('champ', null);
+    if (!ch || ch.done) return;
+    this.useBody(ch.body);
+    const rd = ch.rounds[ch.round];
+    this.challenge = { kind: 'champ', race: { laps: ch.laps, rivals: ch.roster.length, difficulty: ch.difficulty, roster: ch.roster }, intro: `${ch.name} · Round ${ch.round + 1} of ${ch.rounds.length}` };
+    await this.runChallenge(rd.def, `${ch.name} · Round ${ch.round + 1}`);
+  }
+
+  /** Results panel extras for a finished challenge; returns HTML. */
+  challengeResults(session) {
+    const c = this.challenge;
+    if (!c) return '';
+    if (c.kind === 'daily') {
+      const best = session.raceBest;
+      const all = store.get('daily', {});
+      const prev = all[c.key];
+      if (best != null && (prev == null || best < prev)) all[c.key] = best;
+      store.set('daily', all);
+      // streak: consecutive days with a valid lap
+      let streak = 0;
+      for (let d = new Date(); ; d.setDate(d.getDate() - 1)) { if (all[dayKey(d)] != null) streak++; else break; }
+      const medal = best == null ? 'No valid lap' : best <= c.trial.targets[0] ? 'Gold' : best <= c.trial.targets[1] ? 'Silver' : best <= c.trial.targets[2] ? 'Bronze' : 'No medal';
+      return `<div class="ch-box"><span class="ch-k">Daily Challenge · ${c.key}</span><b>${medal}</b><small>Today's best ${all[c.key] != null ? formatTime(all[c.key]) : '—'} · ${streak}-day streak · new track tomorrow</small></div>`;
+    }
+    if (c.kind === 'endless') {
+      const st = c.state;
+      const pos = session.field.standings().findIndex((r) => r.isPlayer) + 1;
+      const ok = pos <= c.need;
+      st.history.push(pos);
+      if (ok) { st.round++; st.score++; } else st.lives--;
+      const best = Math.max(store.get('endlessBest', 0), st.score);
+      store.set('endlessBest', best);
+      store.set('endless', st);
+      c.over = st.lives <= 0;
+      return `<div class="ch-box ${ok ? 'good' : 'bad'}"><span class="ch-k">Endless · ${'♥'.repeat(Math.max(0, st.lives))}${'♡'.repeat(3 - Math.max(0, st.lives))}</span><b>${c.over ? 'Run over' : ok ? 'Survived!' : 'Life lost'}</b><small>${c.over ? `You cleared ${st.score} round${st.score === 1 ? '' : 's'} · best ${best}` : `P${pos} (needed P${c.need}) · ${st.score} cleared · best ${best}`}</small></div>`;
+    }
+    if (c.kind === 'champ') {
+      const ch = store.get('champ', null);
+      const st = session.field.standings();
+      const order = st.map((r) => r.name);
+      let fastest = null, fb = Infinity;
+      for (const r of st) if (r.best != null && r.best < fb) { fb = r.best; fastest = r.name; }
+      const aw = recordRound(ch, order, fastest);
+      store.set('champ', ch);
+      c.done = ch.done;
+      const tbl = champStandings(ch);
+      const me = tbl.findIndex((r) => r.isPlayer) + 1;
+      return `<div class="ch-box"><span class="ch-k">${ch.name} · after round ${ch.round} of ${ch.rounds.length}</span><b>${ch.done ? (me === 1 ? 'Champion!' : `Final position: P${me}`) : `+${aw.You || 0} points · P${me} overall`}</b>
+        <div class="ch-table">${tbl.slice(0, 10).map((r, k) => `<div class="${r.isPlayer ? 'me' : ''}"><b>${k + 1}</b><i style="background:${r.paint || 'var(--accent)'}"></i><span>${r.name}</span><em>${r.pts}</em></div>`).join('')}</div></div>`;
+    }
+    return '';
+  }
+
   /** Career result → rewards panel (appended to the results overlay). */
   careerRewards(result) {
     const ev = this.careerEvent;
@@ -582,8 +761,13 @@ class App {
   }
 
   setResultButtons() {
-    $('[data-res=again]').textContent = this.lastCareer ? 'Back to career' : 'Race again';
-    $('[data-res=modes]').hidden = !!this.lastCareer;
+    const c = this.challenge;
+    $('[data-res=again]').textContent = this.lastCareer ? 'Back to career'
+      : c?.kind === 'daily' ? 'Try again'
+      : c?.kind === 'endless' ? (c.over ? 'New run' : 'Next round')
+      : c?.kind === 'champ' ? (c.done ? 'Championships' : 'Next round')
+      : 'Race again';
+    $('[data-res=modes]').hidden = !!this.lastCareer || !!c;
   }
 
   onTrialFinish(session) {
@@ -592,7 +776,7 @@ class App {
     const best = session.raceBest;
     $('.results-body').innerHTML = `<div class="res-head">${best != null ? `Best lap ${formatTime(best)}` : 'No valid lap'}</div>
       <div class="res-table">${['★★★ Gold', '★★ Silver', '★ Bronze'].map((n, k) => `<div class="${best != null && best <= tc.targets[k] ? 'me' : ''}"><b></b><i></i><span>${n}</span><em>${formatTime(tc.targets[k])}</em></div>`).join('')}</div>
-      ${this.careerRewards({ bestLap: best, targets: tc.targets })}`;
+      ${this.careerRewards({ bestLap: best, targets: tc.targets })}${this.challengeResults(session)}`;
     this.setResultButtons();
     $('#results').hidden = false;
     this.input.captureKeys = false;
@@ -659,8 +843,8 @@ class App {
     const winner = st[0];
     $('.results-body').innerHTML = `
       <div class="res-head">${st.findIndex((r) => r.isPlayer) === 0 ? '<span class="trophy">🏆</span> Victory' : `You finished P${st.findIndex((r) => r.isPlayer) + 1}`}</div>
-      <div class="res-table">${st.map((r, k) => `<div class="${r.isPlayer ? 'me' : ''}"><b>${k + 1}</b><i style="background:${r.paint}"></i><span>${r.name}</span><em>${r.finished != null ? formatTime(r.finished) : 'running'}</em><small>best ${r.best != null ? formatTime(r.best) : '—'}</small></div>`).join('')}</div>
-      ${this.careerRewards({ position: st.findIndex((r) => r.isPlayer) + 1, gridPos: session.field.gridPos, bestLap: session.raceBest, overtakes: Math.max(0, session.field.gridPos - (st.findIndex((r) => r.isPlayer) + 1)) })}`;
+      <div class="res-table ${this.challenge?.kind === 'champ' ? 'compact' : ''}">${st.map((r, k) => `<div class="${r.isPlayer ? 'me' : ''}"><b>${k + 1}</b><i style="background:${r.paint}"></i><span>${r.name}</span><em>${r.finished != null ? formatTime(r.finished) : 'running'}</em><small>best ${r.best != null ? formatTime(r.best) : '—'}</small></div>`).join('')}</div>
+      ${this.careerRewards({ position: st.findIndex((r) => r.isPlayer) + 1, gridPos: session.field.gridPos, bestLap: session.raceBest, overtakes: Math.max(0, session.field.gridPos - (st.findIndex((r) => r.isPlayer) + 1)) })}${this.challengeResults(session)}`;
     void winner;
     this.setResultButtons();
     $('#results').hidden = false;
@@ -828,6 +1012,13 @@ class App {
       audio.click();
       $('#results').hidden = true;
       if (this.lastCareer && a !== 'menu') { this.openCareer(); return; }
+      const c = this.challenge;
+      if (c && a === 'again') {
+        if (c.kind === 'daily') this.startDaily();
+        else if (c.kind === 'endless') this.startEndless(c.over);
+        else if (c.kind === 'champ') { if (c.done) { this.showHome(); this.settings.race.mode = 'champ'; this.openOverlay('modes'); } else this.startChampRound(); }
+        return;
+      }
       if (a === 'again') this.startRace();
       else if (a === 'modes') { this.showHome(); this.openOverlay('modes'); }
       else this.showHome();
@@ -882,7 +1073,7 @@ class App {
         $('#home .tile')?.focus(); e.preventDefault();
       }
       if (e.code === 'Enter' && this.screen === 'home' && !$('#modes').hidden && !document.activeElement?.closest('#modes')) {
-        this.startRace(); e.preventDefault();
+        $('#modes .mode-foot .btn.primary')?.click(); e.preventDefault();
       }
       if (e.code === 'Enter' && this.screen === 'reveal') this.startRace();
     });

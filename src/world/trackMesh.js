@@ -146,7 +146,7 @@ export function buildTrackScene(T, line) {
   const grassT = TX.grassTextures();
   const runoffTex = TX.runoffGrassTexture();
   // tinted to match the terrain's vertex-coloured grass so there is no seam
-  const runoffMat = new THREE.MeshStandardMaterial({ map: runoffTex, normalMap: grassT.normalMap, roughness: 0.97, metalness: 0, color: new THREE.Color(0xe6eadc).multiply(new THREE.Color(...E.ground)) });
+  const runoffMat = new THREE.MeshStandardMaterial({ map: runoffTex, normalMap: grassT.normalMap, roughness: 0.97, metalness: 0, envMapIntensity: 0.5, color: new THREE.Color(0xd2dc98).multiply(new THREE.Color(...E.ground)) });
   if (E.runoff === 'asphalt') { runoffMat.map = asphalt.map; runoffMat.normalMap = asphalt.normalMap; runoffMat.color.set(0x9a9c9e); runoffMat.roughness = 0.9; }
   else if (E.runoff === 'sand' || E.runoff === 'dirt') { const gt = TX.gravelTextures(); runoffMat.map = gt.map; runoffMat.normalMap = gt.normalMap; runoffMat.color.set(E.runoff === 'sand' ? 0xf0d6a0 : 0xa08060); }
   for (const side of [1, -1]) {
@@ -641,7 +641,7 @@ export function buildRacingLineMesh(T, line, profile) {
     else c = [0.2, 0.95, 0.45];
     const off = line.offset[i];
     const tb = Math.tan(T.bank[i]);
-    const row = [-0.22, 0.22].map((dd) => {
+    const row = [-0.16, 0.16].map((dd) => {
       const d = off + dd;
       return B.vert(pos(T, i, d, T.py[i] + d * tb + 0.02), [0, 0], c);
     });
@@ -649,7 +649,7 @@ export function buildRacingLineMesh(T, line, profile) {
   }
   for (let k = 0; k < N; k++) B.quad(rows[k][1], rows[k][0], rows[k + 1][1], rows[k + 1][0]);
   const geo = B.build();
-  const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
+  const mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.32, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
   const m = new THREE.Mesh(geo, mat);
   m.renderOrder = 2;
   return m;

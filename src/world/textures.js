@@ -143,8 +143,10 @@ export function grassTextures() {
     const n = tn((x / W) * 16, (y / H) * 16, 4);
     const g = R();
     const i = (y * W + x) * 4;
-    const k = 0.85 + n * 0.35 + (g - 0.5) * 0.25;
-    img.data[i] = 62 * k; img.data[i + 1] = 104 * k; img.data[i + 2] = 40 * k; img.data[i + 3] = 255;
+    const k = 0.82 + n * 0.38 + (g - 0.5) * 0.3;
+    // olive lawn with drier, yellower blades mixed in (not a flat mint green)
+    const dry = Math.max(0, n - 0.55) * 1.6 + (g > 0.93 ? 0.35 : 0);
+    img.data[i] = (58 + dry * 40) * k; img.data[i + 1] = (92 + dry * 14) * k; img.data[i + 2] = (34 + dry * 4) * k; img.data[i + 3] = 255;
     hb[y * W + x] = g * 0.7 + n * 0.3;
   }
   c.getContext('2d').putImageData(img, 0, 0);

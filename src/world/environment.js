@@ -16,7 +16,7 @@ import { envOf } from '../track/environments.js';
 
 export const THEMES = {
   golden: { name: 'Golden Hour', elevation: 21, azimuth: 235, turbidity: 4.5, rayleigh: 1.8, mie: 0.0025, sun: 0xffdcb4, sunI: 2.7, hemiSky: 0xbcd3ff, hemiGround: 0x5a4a32, hemiI: 0.6, fog: 0xb9b3aa, exposure: 0.5, envI: 0.9, clouds: 0.5 },
-  midday: { name: 'Midday', elevation: 55, azimuth: 160, turbidity: 2.6, rayleigh: 1.1, mie: 0.0022, sun: 0xfff6e8, sunI: 2.9, hemiSky: 0xcfe2ff, hemiGround: 0x4b5a3a, hemiI: 0.6, fog: 0xb4c6da, exposure: 0.42, envI: 1.0, clouds: 0.42 },
+  midday: { name: 'Midday', elevation: 55, azimuth: 160, turbidity: 2.6, rayleigh: 1.1, mie: 0.0022, sun: 0xfff6e8, sunI: 3.1, hemiSky: 0xcfe2ff, hemiGround: 0x4b5a3a, hemiI: 0.5, fog: 0xc6cbc6, exposure: 0.42, envI: 1.0, clouds: 0.42 },
   dusk: { name: 'Dusk', elevation: 7, azimuth: 280, turbidity: 6, rayleigh: 2.6, mie: 0.004, sun: 0xffa47a, sunI: 2.1, hemiSky: 0x9aa8d6, hemiGround: 0x3b2c2a, hemiI: 0.6, fog: 0x978896, exposure: 0.68, envI: 0.85, clouds: 0.38 },
 };
 
@@ -149,7 +149,7 @@ export class World {
     cu.sunCol.value.set(t.sun).lerp(new THREE.Color(1, 1, 1), 0.1).multiplyScalar(0.82);
     cu.shade.value.set(t.fog).multiplyScalar(0.75);
     cu.cover.value = t.clouds ?? 0.45;
-    this.scene.fog = new THREE.FogExp2(new THREE.Color(t.fog).multiplyScalar(0.92), 0.00021);
+    this.scene.fog = new THREE.FogExp2(new THREE.Color(t.fog).multiplyScalar(0.92), 0.00012);
     // image based lighting from the sky
     const envScene = new THREE.Scene();
     const sky2 = new Sky();
@@ -243,7 +243,7 @@ export function buildTerrain(T) {
   geo.setIndex(idx);
   geo.computeVertexNormals();
   const g = TX.grassTextures();
-  const mat = new THREE.MeshStandardMaterial({ map: g.map, normalMap: g.normalMap, vertexColors: true, roughness: 0.97, metalness: 0 });
+  const mat = new THREE.MeshStandardMaterial({ map: g.map, normalMap: g.normalMap, vertexColors: true, roughness: 0.97, metalness: 0, envMapIntensity: 0.5 });
   // slope-aware material: grass on the flats, earthy banks, exposed rock on
   // steep faces (procedural, no extra textures)
   mat.onBeforeCompile = (sh) => {
@@ -258,6 +258,13 @@ export function buildTerrain(T) {
       vec3 dirt = vec3(${E.dirt.map((v) => v.toFixed(3)).join(', ')}) * (0.8 + rn * 0.4);
       vec3 rockc = vec3(0.42, 0.41, 0.4) * (0.7 + rn * 0.5);
       float sl = vSlope + (rn - 0.5) * 0.08;
+      // art-directed lawn: keep the texture's detail but set the hue ourselves
+      // (olive/summer green with dry patches) so sky light can't turn it mint
+      float tl = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
+      float patchN = tn(vWPos.xz * 0.012) * 0.65 + tn(vWPos.xz * 0.05) * 0.35;
+      vec3 lawnA = vec3(0.085, 0.15, 0.04), lawnB = vec3(0.15, 0.175, 0.055);
+      vec3 lawn = mix(lawnA, lawnB, smoothstep(0.4, 0.85, patchN)) * (0.36 + tl * 1.5);
+      diffuseColor.rgb = mix(diffuseColor.rgb, lawn, ${E.sand ? '0.0' : '0.85'});
       ${E.sand ? `diffuseColor.rgb = vec3(${E.sand.map((v) => v.toFixed(3)).join(', ')}) * (0.82 + rn * 0.3);` : ''}
       diffuseColor.rgb = mix(diffuseColor.rgb, dirt, smoothstep(0.1, 0.2, sl) * 0.75);
       diffuseColor.rgb = mix(diffuseColor.rgb, rockc, smoothstep(0.22, 0.34, sl));`);
@@ -290,7 +297,7 @@ export function buildVegetation(T, { density = 1 } = {}) {
   density *= E.trees.density;
   const conifer = coniferGeometry();
   const broad = E.trees.palm ? palmGeometry() : broadleafGeometry();
-  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 });
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0, envMapIntensity: 0.35 });
   const listC = [], listB = [];
   const minClear = T.half + 15 + 10;
   const tries = Math.floor(9000 * density);
@@ -332,7 +339,8 @@ export function buildVegetation(T, { density = 1 } = {}) {
       const im = new THREE.InstancedMesh(geo, mat, items.length);
       items.forEach((m, i) => {
         im.setMatrixAt(i, m);
-        c.setHSL(0.0 + R() * 0.03, 0.0, 0.85 + R() * 0.3);
+        // per-tree tint: hue and value drift so a forest isn't one flat colour
+        c.setRGB(0.8 + R() * 0.35, 0.82 + R() * 0.3, 0.7 + R() * 0.25);
         im.setColorAt(i, c);
       });
       im.computeBoundingSphere();
@@ -433,7 +441,7 @@ function coniferGeometry() {
     const cone = new THREE.ConeGeometry(r, h, 9, 2);
     displace(cone, 0.18, Math.floor(y * 10));
     cone.translate(0, y + h / 2, 0);
-    parts.push(colorize(cone, [0.11, 0.24, 0.13], 0.25, R));
+    parts.push(colorize(cone, [0.07, 0.14, 0.05], 0.3, R));
   }
   return mergeGeos(parts);
 }

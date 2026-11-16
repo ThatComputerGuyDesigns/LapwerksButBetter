@@ -46,7 +46,7 @@ export function buildMountains(T) {
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setIndex(idx);
   g.computeVertexNormals();
-  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, flatShading: true }));
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, envMapIntensity: 0.4 }));
   m.name = 'mountains';
   return m;
 }
@@ -62,13 +62,13 @@ export function buildNature(T) {
   const bushGeo = new THREE.IcosahedronGeometry(1, 1);
   const rocks = [], bushes = [];
   const minClear = T.half + 15 + 6;
-  for (let k = 0; k < 4200; k++) {
+  for (let k = 0; k < 2600; k++) {
     const gx = R() * (hf.nx - 1), gz = R() * (hf.nz - 1);
     const near = hf.near[Math.floor(gz) * hf.nx + Math.floor(gx)];
     if (near < minClear || near > 700) continue;
     const x = hf.minX + gx * hf.cell, z = hf.minZ + gz * hf.cell;
     const y = sampleHF(hf, x, z);
-    const isRock = n.fbm(x / 150, z / 150 + 20, 2) > 0.1 || R() < 0.25;
+    const isRock = n.fbm(x / 150, z / 150 + 20, 2) > 0.3 || R() < 0.08;
     const s = isRock ? 0.6 + R() * 2.2 : 0.7 + R() * 1.3;
     const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y + (isRock ? -0.2 : 0.3) * s, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(R() * 0.4, R() * 6.3, R() * 0.4)), new THREE.Vector3(s, s * (isRock ? 1 : 0.8), s));
     (isRock ? rocks : bushes).push(m);
@@ -82,7 +82,7 @@ export function buildNature(T) {
     im.computeBoundingSphere();
     g.add(im);
   };
-  add(rockGeo, rocks, new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true }), 0x8a8a86);
+  add(rockGeo, rocks, new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true }), 0x6e6a62);
   add(bushGeo, bushes, new THREE.MeshStandardMaterial({ roughness: 0.85, flatShading: true }), T.env === 'desert' ? 0x7a7440 : 0x3d5a2a);
   return g;
 }
