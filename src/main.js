@@ -6,6 +6,8 @@ import * as THREE from 'three';
 import { World, buildTerrain, buildVegetation, THEMES } from './world/environment.js';
 import { buildTrackScene, runoffHeight, sampleHF } from './world/trackMesh.js';
 import { buildGrass } from './world/grass.js';
+import { buildMountains, buildNature, buildTrackside } from './world/scenery.js';
+import { batchStatic } from './world/batch.js';
 import { buildTrack, buildHeightfield } from './track/track.js';
 import { computeRacingLine, speedProfile } from './track/racingLine.js';
 import { PRESETS, presetById } from './track/presets.js';
@@ -51,7 +53,8 @@ class App {
     this.lastT = performance.now();
     this.fps = { acc: 0, n: 0, slow: 0, fast: 0 };
     audio.setVolume(this.settings.volume);
-    this.world.setQuality(this.settings.quality === 'auto' ? 'high' : this.settings.quality);
+    // Auto starts at medium and only climbs if the machine has headroom
+    this.world.setQuality(this.settings.quality === 'auto' ? 'medium' : this.settings.quality);
     $('.ver').textContent = VERSION;
     this.bindUI();
     const unlock = () => audio.unlock();
@@ -95,9 +98,14 @@ class App {
     // yield a frame so the loader can paint on slower machines
     await new Promise((r) => setTimeout(r, 0));
     this.trackGroup = buildTrackScene(T, line);
+    // merge static trackside geometry (keep the road: the reveal animates it)
+    batchStatic(this.trackGroup, (m) => m === this.trackGroup.userData.road);
     this.world.content.add(this.trackGroup);
     this.world.content.add(buildTerrain(T));
     this.world.content.add(buildVegetation(T, { density: this.world.quality === 'low' ? 0.5 : 1 }));
+    const side = buildTrackside(T, line);
+    batchStatic(side);
+    this.world.content.add(buildMountains(T), buildNature(T), side);
     if (this.world.quality !== 'low') {
       const grass = buildGrass(T, (i, d, x, z) => {
         const wall = T.half + (d >= 0 ? T.runL[i] : T.runR[i]);
@@ -306,7 +314,8 @@ class App {
       ${sw('showLine', 'Driving line')}
       ${sw('ghost', 'Best-lap ghost')}
       <h4>Display &amp; sound</h4>
-      <div class="field"><span>Graphics</span>${seg('quality', [['auto', 'Auto'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low']])}</div>
+      <div class="field"><span>Graphics</span>${seg('quality', [['auto', 'Auto'], ['ultra', 'Ultra'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low']])}
+        <div class="desc">Auto keeps the frame rate smooth. Ultra adds ambient occlusion and full resolution (fast GPUs).</div></div>
       <div class="field"><span>Units</span>${seg('units', [['kmh', 'km/h'], ['mph', 'mph']])}</div>
       <label class="slider"><span>Volume <b>${Math.round(S.volume * 100)}%</b></span><input type="range" min="0" max="1" step="0.05" value="${S.volume}" data-vol></label>
       <h4>Controls</h4>
@@ -737,6 +746,8 @@ class App {
       this.garage.update(dt);
       this.world.renderPass.scene = this.garage.scene;
       this.world.renderPass.camera = this.garage.camera;
+      const ao = this.world.gtao.enabled;
+      this.world.gtao.enabled = false;
       const prevExp = this.world.renderer.toneMappingExposure;
       this.world.renderer.toneMappingExposure = 0.65;
       if (this.world.quality === 'low') this.world.renderer.render(this.garage.scene, this.garage.camera);
@@ -744,6 +755,7 @@ class App {
       this.world.renderer.toneMappingExposure = prevExp;
       this.world.renderPass.scene = this.world.scene;
       this.world.renderPass.camera = this.world.camera;
+      this.world.gtao.enabled = ao;
       return;
     }
     if (scr === 'reveal') this.updateReveal(dt);
@@ -783,13 +795,15 @@ class App {
     if (avg > 1 / 52) {
       f.ceiling = Math.min(f.ceiling ?? 1, k);
       if (k > 0.55) W.setResScale(k * 0.88);
-      else if (W.quality !== 'low') { W.setQuality(W.quality === 'high' ? 'medium' : 'low'); W.setResScale(0.85); }
+      else if (W.quality !== 'low') { if (W.quality === 'high') f.noHigh = true; W.setQuality(W.quality === 'high' ? 'medium' : 'low'); W.setResScale(0.85); }
       f.good = 0;
     } else if (avg < 1 / 57) {
       f.good = (f.good || 0) + 1;
       // creep back up slowly, staying just below the scale that stuttered
       if (f.good >= 6 && k < 1 && k * 1.06 < (f.ceiling ?? 1) - 0.02) { W.setResScale(k * 1.06); f.good = 0; }
       if (f.good >= 40) { f.ceiling = Math.min(1, (f.ceiling ?? 1) + 0.05); f.good = 0; }
+      // plenty of headroom at full resolution → step up to High once
+      if (k >= 0.99 && W.quality === 'medium' && !f.noHigh && (f.goodTotal = (f.goodTotal || 0) + 1) > 24) W.setQuality('high');
     }
   }
 }

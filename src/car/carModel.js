@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { BODIES } from '../physics/carSetup.js';
 import { liveryTexture } from '../world/textures.js';
 import { createFormula } from './formulaModel.js';
+import { batchStatic } from '../world/batch.js';
 import { clamp, lerp, smoothstep } from '../core/math.js';
 
 // keyframe profiles: [t, halfWidthFactor, belt (top of lower body, m)]
@@ -385,6 +386,7 @@ export function createCar(setup) {
   ];
   const tyreWidth = B.model === 'hatch' || B.model === 'jdm' ? 0.225 : B.model === 'gt3' || B.model === 'hyper' || B.model === 'proto' ? 0.31 : 0.275;
   const wheelTemplate = buildWheel(wheelR, tyreWidth, setup.rim || '#c9ccd1', B.model);
+  batchStatic(wheelTemplate); // ~25 parts → 5 draw calls per wheel
   const caliperMat = new THREE.MeshStandardMaterial({ color: B.model === 'proto' || B.model === 'hyper' ? 0xffc21a : 0xd4202a, roughness: 0.35, metalness: 0.3 });
   wheelPositions.forEach(([x, z], i) => {
     const steer = new THREE.Group();
@@ -414,10 +416,15 @@ export function createCar(setup) {
   blob.renderOrder = 1;
   root.add(blob);
 
+  // only the big shapes cast shadows (shadow-pass draw calls are not free)
   root.traverse((o) => {
-    if (o.isMesh && o !== blob) { o.castShadow = true; o.receiveShadow = true; }
+    if (!o.isMesh || o === blob) return;
+    o.receiveShadow = true;
+    const big = o.geometry.boundingSphere || (o.geometry.computeBoundingSphere(), o.geometry.boundingSphere);
+    o.castShadow = big.radius > 0.3;
   });
 
+  batchStatic(body); // the whole shell + trim → one mesh per material
   root.userData = { body, wheels, tailMat, revMat, headMat, paintMat, length: zF - zR, width: W2 * 2, zF, zR, wheelR, sync: makeSync(body, wheels, tailMat, revMat) };
   return root;
 }
@@ -534,12 +541,12 @@ export function buildWheel(R, width, rimColor, style) {
   hub.rotation.z = Math.PI / 2;
   hub.position.x = width * 0.38;
   g.add(hub);
-  const nut = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.07, 6), new THREE.MeshStandardMaterial({ color: 0xd4202a, metalness: 0.6, roughness: 0.3 }));
+  const nut = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.07, 6), rimMat);
   nut.rotation.z = Math.PI / 2;
   nut.position.x = width * 0.4;
   g.add(nut);
   // brake disc
-  const disc = new THREE.Mesh(new THREE.CylinderGeometry(rimR * 0.82, rimR * 0.82, 0.03, 36), new THREE.MeshStandardMaterial({ color: 0x5b5e63, metalness: 0.9, roughness: 0.5 }));
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(rimR * 0.82, rimR * 0.82, 0.03, 36), darkMat);
   disc.rotation.z = Math.PI / 2;
   disc.position.x = -0.02;
   g.add(disc);

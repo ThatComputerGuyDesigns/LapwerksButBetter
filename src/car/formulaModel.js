@@ -2,6 +2,7 @@
 // sidepods, multi-element wings, halo, exposed wheels and suspension.
 import * as THREE from 'three';
 import { lofted, buildWheel, makeSync } from './carModel.js';
+import { batchStatic } from '../world/batch.js';
 import { liveryTexture } from '../world/textures.js';
 import { lerp } from '../core/math.js';
 
@@ -144,6 +145,7 @@ export function createFormula(setup, B) {
   const wheels = [];
   const front = buildWheel(R, 0.3, setup.rim || '#2a2c30', 'proto');
   const rear = buildWheel(R + 0.01, 0.4, setup.rim || '#2a2c30', 'proto');
+  batchStatic(front); batchStatic(rear);
   const pos = [[B.trackF / 2, a], [-B.trackF / 2, a], [B.trackR / 2, -b], [-B.trackR / 2, -b]];
   pos.forEach(([x, z], i) => {
     const steer = new THREE.Group();
@@ -176,7 +178,8 @@ export function createFormula(setup, B) {
   blob.position.set(0, 0.03, (zF + zR) / 2);
   root.add(blob);
 
-  root.traverse((o) => { if (o.isMesh && o !== blob) { o.castShadow = true; o.receiveShadow = true; } });
+  root.traverse((o) => { if (o.isMesh && o !== blob) { o.receiveShadow = true; const bs = o.geometry.boundingSphere || (o.geometry.computeBoundingSphere(), o.geometry.boundingSphere); o.castShadow = bs.radius > 0.3; } });
+  batchStatic(body);
   root.userData = { body, wheels, tailMat, paintMat: paint, length: zF - zR, width: 2, zF, zR, wheelR: R, sync: makeSync(body, wheels, tailMat, null) };
   return root;
 }

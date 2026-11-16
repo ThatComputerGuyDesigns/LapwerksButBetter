@@ -81,7 +81,7 @@ export function buildGrass(T, sampleHeight, { density = 1 } = {}) {
       transformed *= 1.0 - smoothstep(55.0, 85.0, dist);
     `);
   };
-  const TILE = 120;
+  const TILE = 260;
   const tiles = new Map();
   for (const it of items) {
     const key = `${Math.floor(it[0] / TILE)},${Math.floor(it[2] / TILE)}`;

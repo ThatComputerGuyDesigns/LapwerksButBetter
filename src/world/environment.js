@@ -5,6 +5,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { buildHeightfield } from '../track/track.js';
 import { makeGradePass, makeClouds } from './post.js';
 import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflare.js';
@@ -78,6 +79,11 @@ export class World {
     this.composer = new EffectComposer(this.renderer, rt);
     this.renderPass = new RenderPass(this.scene, this.camera);
     this.composer.addPass(this.renderPass);
+    // ground-truth ambient occlusion: contact shading where surfaces meet
+    // (cars on the road, barriers, kerbs, grandstands) — high quality only
+    this.gtao = new GTAOPass(this.scene, this.camera, size.x, size.y, undefined, { radius: 0.9, distanceExponent: 1.6, thickness: 2, scale: 1.25, samples: 12, distanceFallOff: 1 }, { radiusExponent: 1.6, rings: 2, samples: 12 });
+    this.gtao.blendIntensity = 0.85;
+    this.composer.addPass(this.gtao);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.12, 0.3, 5.0);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
@@ -87,13 +93,15 @@ export class World {
 
   setQuality(q) {
     this.quality = q;
-    this.maxPR = Math.min(window.devicePixelRatio, q === 'high' ? 1.5 : q === 'medium' ? 1.25 : 1);
+    this.maxPR = Math.min(window.devicePixelRatio, q === 'ultra' ? 2 : q === 'high' ? 1.5 : q === 'medium' ? 1.25 : 1);
     this.resScale = this.resScale ?? 1;
     this.renderer.setPixelRatio(this.maxPR * this.resScale);
     this.renderer.shadowMap.enabled = q !== 'low';
-    this.sun.shadow.mapSize.set(q === 'high' ? 2048 : 1024, q === 'high' ? 2048 : 1024);
+    const sm = q === 'ultra' || q === 'high' ? 2048 : 1024;
+    this.sun.shadow.mapSize.set(sm, sm);
     if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
     this.bloom.enabled = q !== 'low';
+    this.gtao.enabled = q === 'ultra'; // ambient occlusion: opt-in, costly
     this.resize();
   }
 
@@ -233,6 +241,23 @@ export function buildTerrain(T) {
   geo.computeVertexNormals();
   const g = TX.grassTextures();
   const mat = new THREE.MeshStandardMaterial({ map: g.map, normalMap: g.normalMap, vertexColors: true, roughness: 0.97, metalness: 0 });
+  // slope-aware material: grass on the flats, earthy banks, exposed rock on
+  // steep faces (procedural, no extra textures)
+  mat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vSlope; varying vec3 vWPos;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSlope = 1.0 - normalize(mat3(modelMatrix) * normal).y; vWPos = (modelMatrix * vec4(position, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+      varying float vSlope; varying vec3 vWPos;
+      float th(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+      float tn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(th(i), th(i+vec2(1,0)), f.x), mix(th(i+vec2(0,1)), th(i+vec2(1,1)), f.x), f.y); }`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+      float rn = tn(vWPos.xz * 0.35) * 0.6 + tn(vWPos.xz * 1.7) * 0.4;
+      vec3 dirt = vec3(0.36, 0.29, 0.2) * (0.8 + rn * 0.4);
+      vec3 rockc = vec3(0.42, 0.41, 0.4) * (0.7 + rn * 0.5);
+      float sl = vSlope + (rn - 0.5) * 0.08;
+      diffuseColor.rgb = mix(diffuseColor.rgb, dirt, smoothstep(0.1, 0.2, sl) * 0.75);
+      diffuseColor.rgb = mix(diffuseColor.rgb, rockc, smoothstep(0.22, 0.34, sl));`);
+  };
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true;
   mesh.name = 'terrain';
@@ -284,7 +309,7 @@ export function buildVegetation(T, { density = 1 } = {}) {
   const g = new THREE.Group();
   // split into 220 m tiles so the renderer can frustum-cull (and skip
   // shadow-casting for) whole groups of trees you are not looking at
-  const TILE = 220;
+  const TILE = 420;
   const c = new THREE.Color();
   const v = new THREE.Vector3();
   for (const [geo, list] of [[conifer, listC], [broad, listB]]) {
