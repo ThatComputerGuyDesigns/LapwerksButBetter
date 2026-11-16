@@ -115,6 +115,52 @@ export function buildOpenWorld(W) {
     root.add(m);
   });
 
+  // ------------------------------------------------------------ roadside: reflector posts + chevrons on bends
+  {
+    const postGeo = new THREE.BoxGeometry(0.12, 1.0, 0.12); postGeo.translate(0, 0.5, 0);
+    const chevGeo = new THREE.PlaneGeometry(0.9, 0.7); chevGeo.translate(0, 1.35, 0);
+    const legGeo = new THREE.BoxGeometry(0.06, 1.1, 0.06); legGeo.translate(0, 0.55, 0);
+    const posts = [], chevs = [], legs = [];
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), Y = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1);
+    for (const r of W.roads) {
+      if (r.type === 'dirt' || r.type === 'street' || r.type === 'runway') continue;
+      const P = r.pts, M = P.length;
+      for (let i = 0; i < M - 1; i += 1) {
+        const p = P[i], n2 = P[i + 1];
+        const tx = n2[0] - p[0], tz = n2[1] - p[1], tl = Math.hypot(tx, tz) || 1;
+        const nx = tz / tl, nz = -tx / tl; // right-hand normal
+        const yaw = Math.atan2(tx, tz);
+        const b = r.bank ? r.bank[i] : 0;
+        if (i % 10 === 0) for (const sd of [1, -1]) {
+          const d = r.width / 2 + 1.4;
+          const x = p[0] + nx * d * sd, z = p[1] + nz * d * sd;
+          q.setFromAxisAngle(Y, yaw);
+          posts.push(new THREE.Matrix4().compose(new THREE.Vector3(x, hAt(x, z), z), q.clone(), one));
+        }
+        // chevrons on the outside of tight bends (bank sign tells the outside)
+        if (Math.abs(b) > 0.045 && i % 4 === 0) {
+          const sd = b > 0 ? 1 : -1;
+          const d = r.width / 2 + 3;
+          const x = p[0] + nx * d * sd, z = p[1] + nz * d * sd;
+          q.setFromAxisAngle(Y, yaw - sd * Math.PI / 2 + Math.PI);
+          const mtx = new THREE.Matrix4().compose(new THREE.Vector3(x, hAt(x, z), z), q.clone(), new THREE.Vector3(sd, 1, 1));
+          chevs.push(mtx); legs.push(mtx);
+        }
+      }
+    }
+    const pc = document.createElement('canvas'); pc.width = 16; pc.height = 64;
+    const pg = pc.getContext('2d'); pg.fillStyle = '#f2f2ee'; pg.fillRect(0, 0, 16, 64); pg.fillStyle = '#111'; pg.fillRect(0, 6, 16, 10); pg.fillStyle = '#ff9a1a'; pg.fillRect(0, 8, 16, 6);
+    const postTex = new THREE.CanvasTexture(pc); postTex.colorSpace = THREE.SRGBColorSpace;
+    const cc = document.createElement('canvas'); cc.width = 128; cc.height = 96;
+    const cg = cc.getContext('2d'); cg.fillStyle = '#111'; cg.fillRect(0, 0, 128, 96); cg.fillStyle = '#ffd23f';
+    for (const o of [-18, 22]) { cg.beginPath(); cg.moveTo(30 + o, 12); cg.lineTo(64 + o, 48); cg.lineTo(30 + o, 84); cg.lineTo(48 + o, 84); cg.lineTo(82 + o, 48); cg.lineTo(48 + o, 12); cg.closePath(); cg.fill(); }
+    const chevTex = new THREE.CanvasTexture(cc); chevTex.colorSpace = THREE.SRGBColorSpace;
+    const addIM = (geo, mat, list, shadow) => { if (!list.length) return; const im = new THREE.InstancedMesh(geo, mat, list.length); list.forEach((m, k) => im.setMatrixAt(k, m)); im.castShadow = shadow; im.computeBoundingSphere(); root.add(im); };
+    addIM(postGeo, new THREE.MeshStandardMaterial({ map: postTex, roughness: 0.6 }), posts, false);
+    addIM(chevGeo, new THREE.MeshStandardMaterial({ map: chevTex, roughness: 0.5, side: THREE.DoubleSide, emissive: 0x222200, emissiveIntensity: 0.2 }), chevs, false);
+    addIM(legGeo, new THREE.MeshStandardMaterial({ color: 0x555a60, metalness: 0.6, roughness: 0.4 }), legs, false);
+  }
+
   // ------------------------------------------------------------ forests (near/far LOD tiles)
   const forest = buildForests(W, R, hAt);
   root.add(forest.group);
@@ -151,11 +197,82 @@ export function buildOpenWorld(W) {
   root.add(buildAirfield(W, hAt));
   root.add(buildLighthouse(W, hAt));
 
+  // ------------------------------------------------------------ grass that follows the camera
+  const grass = buildGrassPatch(W, hAt);
+  root.add(grass.mesh);
+
   return {
     group: root,
     update(dt, cam) {
       for (const u of updaters) u(dt);
       forest.lod(cam);
+      grass.update(dt, cam);
+    },
+  };
+}
+
+/** A disc of dense grass tufts re-seeded around the camera as it moves. */
+function buildGrassPatch(W, hAt) {
+  const COUNT = 14000, RAD = 62, STEP = 1.0;
+  // tuft: three crossed tapered blades, dark at the root → bright tip
+  const pos = [], col = [], idx = [];
+  for (let b = 0; b < 3; b++) {
+    const a = (b / 3) * Math.PI, ca = Math.cos(a), sa = Math.sin(a), v0 = pos.length / 3;
+    const pts = [[-0.34, 0], [0.34, 0], [-0.2, 0.34], [0.2, 0.34], [0.02, 0.72]];
+    for (const [x, y] of pts) { pos.push(ca * x + sa * y * 0.25, y, sa * x - ca * y * 0.25); const t = y / 0.72; col.push(0.1 + t * 0.26, 0.19 + t * 0.34, 0.04 + t * 0.1); }
+    idx.push(v0, v0 + 1, v0 + 2, v0 + 1, v0 + 3, v0 + 2, v0 + 2, v0 + 3, v0 + 4);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(new Array(pos.length).fill(0).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+  geo.setIndex(idx);
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.85, metalness: 0, envMapIntensity: 0.6 });
+  const uniforms = { time: { value: 0 } };
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.time = uniforms.time;
+    sh.vertexShader = 'uniform float time;\n' + sh.vertexShader.replace('#include <begin_vertex>', `
+      vec3 transformed = vec3(position);
+      vec4 wp = modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+      float sway = sin(time * 1.6 + wp.x * 0.21 + wp.z * 0.17) * 0.6 + sin(time * 2.7 + wp.x * 0.43) * 0.3;
+      transformed.x += sway * 0.22 * position.y; transformed.z += sway * 0.12 * position.y;
+      float dist = length(wp.xyz - cameraPosition);
+      transformed *= 1.0 - smoothstep(${(RAD - 16).toFixed(1)}, ${(RAD - 2).toFixed(1)}, dist);`);
+  };
+  const mesh = new THREE.InstancedMesh(geo, mat, COUNT);
+  mesh.frustumCulled = false;
+  mesh.receiveShadow = true;
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), Y = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3(), sc = new THREE.Vector3();
+  const hash = (x, z) => { const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453; return s - Math.floor(s); };
+  let lx = 1e9, lz = 1e9;
+  const reseed = (cx, cz) => {
+    let k = 0;
+    const gx = Math.round(cx / STEP), gz = Math.round(cz / STEP), n = Math.ceil(RAD / STEP);
+    for (let j = -n; j <= n && k < COUNT; j++) for (let i = -n; i <= n && k < COUNT; i++) {
+      const X = gx + i, Z = gz + j;
+      const h1 = hash(X, Z);
+      if (h1 < 0.38) continue; // natural gaps
+      const x = (X + hash(X + 31, Z) - 0.5) * STEP, z = (Z + hash(X, Z + 57) - 0.5) * STEP;
+      if ((x - cx) ** 2 + (z - cz) ** 2 > RAD * RAD) continue;
+      const c = cellOf(x, z);
+      if (W.surf[c] !== 2) continue;
+      const r = W.roadOf[c] >= 0 ? W.roads[W.roadOf[c]] : null;
+      if (r && W.dist[c] < r.width / 2 + 1.2) continue;
+      const s = 0.7 + h1 * 1.1;
+      q.setFromAxisAngle(Y, h1 * 40);
+      m4.compose(v.set(x, hAt(x, z) - 0.03, z), q, sc.set(s, s * (0.7 + hash(X + 5, Z + 9) * 0.9), s));
+      mesh.setMatrixAt(k++, m4);
+    }
+    mesh.count = k;
+    mesh.instanceMatrix.needsUpdate = true;
+  };
+  return {
+    mesh,
+    update(dt, cam) {
+      uniforms.time.value += dt;
+      // seed ahead of the camera so the grass is where you are looking
+      const fx = cam.position.x, fz = cam.position.z;
+      if ((fx - lx) ** 2 + (fz - lz) ** 2 > 64) { lx = fx; lz = fz; reseed(fx, fz); }
     },
   };
 }
@@ -244,12 +361,42 @@ function buildForests(W, R, hAt) {
     if (R() > p * 0.55) continue;
     const coni = north > 0.4 || (west > 0.5 && R() < 0.75) || h > 120;
     (coni ? kinds.conifer : kinds.broad).push([x, h, z]);
-    if (kinds.conifer.length + kinds.broad.length > 26000) break;
+    if (kinds.conifer.length + kinds.broad.length > 30000) break;
   }
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0, envMapIntensity: 0.45 });
+  // roadside tree lines: avenues along the country roads
+  for (const r of W.roads) {
+    if (r.type === 'street' || r.type === 'runway' || r.type === 'dirt') continue;
+    for (let i = 2; i < r.pts.length - 2; i += 3) {
+      const p = r.pts[i], n2 = r.pts[i + 1];
+      const tx = n2[0] - p[0], tz = n2[1] - p[1], tl = Math.hypot(tx, tz) || 1;
+      if (n.fbm(p[0] / 300 + 9, p[1] / 300, 2) < -0.05) continue; // open stretches with views
+      for (const sd of [1, -1]) {
+        if (R() < 0.45) continue;
+        const d = r.width / 2 + 7 + R() * 9;
+        const x = p[0] + (tz / tl) * d * sd, z = p[1] - (tx / tl) * d * sd;
+        const c = cellOf(x, z);
+        if (W.surf[c] === S_WATER || W.surf[c] === S_SAND || W.dist[c] < r.width / 2 + 5) continue;
+        if (Math.hypot(x - L.festival[0], z - L.festival[1]) < 230 || (Math.abs(x - L.town[0]) < 330 && Math.abs(z - L.town[1]) < 300)) continue;
+        const h = hAt(x, z);
+        (h > 110 || z < -700 ? kinds.conifer : kinds.broad).push([x, h, z]);
+      }
+    }
+  }
+  // round, soft shading: normals radiate from the crown instead of per-facet
+  const soft = (geo, cy, flat) => {
+    const p = geo.attributes.position, nn = geo.attributes.normal, v3 = new THREE.Vector3();
+    for (let i = 0; i < p.count; i++) {
+      if (p.getY(i) < 2.6) continue; // trunk keeps its normals
+      v3.set(p.getX(i), (p.getY(i) - cy) * flat, p.getZ(i)).normalize();
+      v3.y = v3.y * 0.6 + 0.4; v3.normalize();
+      nn.setXYZ(i, v3.x, v3.y, v3.z);
+    }
+    return geo;
+  };
   const geos = {
-    conifer: [coniferGeometry(), simpleConifer()],
-    broad: [broadleafGeometry(), simpleBroad()],
+    conifer: [soft(coniferGeometry(), 5, 0.35), soft(simpleConifer(), 5, 0.35)],
+    broad: [soft(broadleafGeometry(), 4.6, 1), soft(simpleBroad(), 4.6, 1)],
     palm: [palmGeometry(), palmGeometry()],
   };
   const TILE = 400;
@@ -269,11 +416,11 @@ function buildForests(W, R, hAt) {
       const make = (geo, lod) => {
         const im = new THREE.InstancedMesh(geo, mat, items.length);
         items.forEach(([x, y, z], i) => {
-          const s = 0.8 + R() * 0.75;
+          const s = 1.25 + R() * 1.0;
           q.setFromAxisAngle(Y, R() * 6.28);
           m4.compose(v.set(x, y - 0.3, z), q, sc.set(s, s * (0.85 + R() * 0.4), s));
           im.setMatrixAt(i, m4);
-          col.setRGB(0.78 + R() * 0.4, 0.8 + R() * 0.35, 0.68 + R() * 0.3);
+          col.setRGB(0.6 + R() * 0.45, 0.72 + R() * 0.38, 0.5 + R() * 0.3);
           im.setColorAt(i, col);
         });
         im.computeBoundingSphere();

@@ -166,6 +166,8 @@ class App {
     if (this.trackStale) {
       this.trackStale = false;
       this.world.fogDensity = null;
+      this.world.grade.uniforms.saturation.value = 1.12;
+      this.world.grade.uniforms.contrast.value = 1.1;
       this.loadTrack(this.trackDef).then(() => { if (this.screen === 'home') this.startAttract(); });
     } else this.startAttract();
     this.updateHomeCard();
@@ -307,7 +309,9 @@ class App {
     this.world.clearContent();
     this.trackStale = true;
     this.openW ||= generateWorld(7);
-    this.world.fogDensity = 0.00009;
+    this.world.fogDensity = 0.00015;
+    this.world.grade.uniforms.saturation.value = 1.24;
+    this.world.grade.uniforms.contrast.value = 1.14;
     this.world.setTheme(this.settings.openTheme || 'midday');
     await new Promise((r) => setTimeout(r, 0));
     this.openView = buildOpenWorld(this.openW);

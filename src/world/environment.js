@@ -198,7 +198,7 @@ export class World {
       if (this.hdrEnv) this.hdrEnv.dispose();
       this.hdrEnv = this.pmrem.fromEquirectangular(tex);
       this.scene.environment = this.hdrEnv.texture;
-      this.scene.environmentIntensity = 1;
+      this.scene.environmentIntensity = 0.55; // the sun is a real light below, so keep sky fill moderate
       this.sky.visible = false;
       this.clouds.visible = false;
       // sun direction from the brightest point of the photo (three.js equirect mapping)
@@ -208,8 +208,8 @@ export class World {
       // direct sun strength relative to the sky (low suns are weaker and warmer)
       const t = this.theme;
       this.sun.color.set(t.sun);
-      this.sun.intensity = ({ midday: 5.2, golden: 3.4, dusk: 2.6 }[key] ?? 4) / exposure * 0.2;
-      this.hemi.intensity = 0.25;
+      this.sun.intensity = ({ midday: 3.6, golden: 2.8, dusk: 1.9 }[key] ?? 3) / exposure;
+      this.hemi.intensity = 0.12;
       const h = meta.horizon;
       // fog in the same linear radiance as the horizon, so distant land melts into the sky
       const fog = new THREE.Color(h[0], h[1], h[2]).multiplyScalar(0.92);

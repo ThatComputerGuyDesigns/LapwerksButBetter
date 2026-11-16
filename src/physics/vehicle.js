@@ -417,35 +417,26 @@ export class Vehicle {
    */
   vertical(q, dt) {
     const g = q.height;
-    if (this.vy == null) { this.vy = 0; this.y = g; this.prevGround = g; }
-    if (!this.airborne) {
-      // vertical speed while glued to the ground
-      const gv = (g - this.prevGround) / dt;
-      const pred = this.y + gv * dt;
-      // leave the ground when it drops away faster than the car can fall
-      if (gv < this.vy - 9.81 * dt * 1.6 && this.speed > 12 && this.vy > -2) {
-        this.airborne = true;
-        this.airTime = 0;
-      } else {
-        this.vy = gv;
-        this.y = g;
-      }
-      void pred;
-    }
-    if (this.airborne) {
-      this.airTime += dt;
-      this.vy -= 9.81 * dt;
-      this.y += this.vy * dt;
-      if (this.y <= g) {
-        const impact = Math.max(0, (this.prevGround != null ? (g - this.prevGround) / dt : 0) - this.vy);
-        this.y = g;
-        this.airborne = false;
+    if (this.vy == null || this.prevGround == null) { this.vy = 0; this.y = g; this.prevGround = g; }
+    const gv = (g - this.prevGround) / dt; // how fast the ground under the car rises
+    this.prevGround = g;
+    // always fall ballistically; the ground only pushes up
+    this.vy -= 9.81 * dt;
+    this.y += this.vy * dt;
+    if (this.y <= g) {
+      const impact = gv - this.vy;
+      if (this.airborne) {
         this.lastLanding = { airTime: this.airTime, impact };
-        this.vy = 0;
         if (impact > 6) { const k = Math.max(0.85, 1 - (impact - 6) * 0.01); this.u *= k; this.v *= k; }
       }
+      this.y = g;
+      this.vy = gv;
+      this.airborne = false;
+    } else if (this.y - g > 0.12 && !this.airborne) {
+      this.airborne = true;
+      this.airTime = 0;
     }
-    this.prevGround = g;
+    if (this.airborne) this.airTime += dt;
   }
 
   /** Steering map shared by player input and the AI. */

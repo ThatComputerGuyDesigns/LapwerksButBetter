@@ -39,6 +39,26 @@ const catmullOpen = (P, per = 10) => {
   return out;
 };
 
+/**
+ * Lay a road the way engineers do: straights and constant-radius arcs.
+ * a: heading in radians (direction (cos a, sin a) in x/z). Segments:
+ * ['S', length] or ['A', radius, degrees] (+ = turn right/clockwise).
+ */
+export function pathFromSegments([x, z], a, segs, step = 6) {
+  const pts = [[x, z]];
+  for (const sg of segs) {
+    if (sg[0] === 'S') {
+      const n = Math.max(1, Math.round(sg[1] / step));
+      for (let i = 0; i < n; i++) { x += Math.cos(a) * (sg[1] / n); z += Math.sin(a) * (sg[1] / n); pts.push([x, z]); }
+    } else {
+      const R = sg[1], ang = (sg[2] * Math.PI) / 180;
+      const n = Math.max(2, Math.round((Math.abs(ang) * R) / step));
+      for (let i = 0; i < n; i++) { a += ang / n; x += Math.cos(a) * ((Math.abs(ang) * R) / n); z += Math.sin(a) * ((Math.abs(ang) * R) / n); pts.push([x, z]); }
+    }
+  }
+  return pts;
+}
+
 export function generateWorld(seed = 7) {
   const n = makeNoise2D(seed * 13 + 1);
   const R = rng(seed * 101 + 5);
@@ -82,8 +102,8 @@ export function generateWorld(seed = 7) {
 
   // ---------- roads
   const roads = [];
-  const addRoad = (id, name, type, ctrl, closed = false) => {
-    const dense0 = closed ? catmullRomClosed(ctrl, 12) : catmullOpen(ctrl, 12);
+  const addRoad = (id, name, type, ctrl, closed = false, dense = false) => {
+    const dense0 = dense ? ctrl : closed ? catmullRomClosed(ctrl, 12) : catmullOpen(ctrl, 12);
     const pts = resamplePolyline(dense0, 4, closed);
     roads.push({ id, name, type, closed, pts, ...ROAD_TYPES[type] });
   };
@@ -100,8 +120,46 @@ export function generateWorld(seed = 7) {
   const coast = [];
   for (let x = -1250; x <= 1250; x += 180) coast.push([x, coastZ(x) - 140 - 30 * n(x / 200, 2)]);
   addRoad('coast', 'Coast Road', 'road', [[-1150, 830], ...coast, [1150, 830]]);
-  // mountain pass: switchbacks up to the summit and down the far side
-  addRoad('pass', 'Summit Pass', 'pass', [[-560, -1060], [-430, -1230], [-640, -1330], [-420, -1450], [-620, -1560], [-330, -1650], L.summit, [120, -1700], [330, -1560], [180, -1440], [420, -1360], [300, -1230], [560, -1120]]);
+  // connect a road end to the nearest point of another road with a smooth link
+  const linkTo = (pts, targetId) => {
+    const t = roads.find((r) => r.id === targetId);
+    const e = pts[pts.length - 1], e0 = pts[pts.length - 2];
+    let bi = 0, bd = Infinity;
+    t.pts.forEach((p, i) => { const d = Math.hypot(p[0] - e[0], p[1] - e[1]); if (d < bd) { bd = d; bi = i; } });
+    const tp = t.pts[bi];
+    const dx = e[0] - e0[0], dz = e[1] - e0[1], dl = Math.hypot(dx, dz) || 1;
+    const mid = [e[0] + (dx / dl) * Math.min(80, bd * 0.4), e[1] + (dz / dl) * Math.min(80, bd * 0.4)];
+    return [...pts, ...resamplePolyline(catmullOpen([e, mid, tp], 10), 6).slice(1)];
+  };
+  // Summit Pass: proper switchback hairpins up the mountain, then a fast descent
+  {
+    const P = pathFromSegments([-600, -980], -Math.PI / 2, [
+      ['S', 90], ['A', 70, 35], ['S', 60], ['A', 19, -172], ['S', 140], ['A', 19, 172], ['S', 150], ['A', 19, -172], ['S', 140],
+      ['A', 90, 60], ['S', 110], ['A', 140, -40], ['S', 90], ['A', 60, 85], ['S', 70], ['A', 45, -95], ['A', 110, 50], ['S', 160], ['A', 200, 25], ['S', 120],
+    ]);
+    addRoad('pass', 'Summit Pass', 'pass', linkTo(P, 'loop'), false, true);
+  }
+  // Canyon Run: tight esses and quick sweepers through the western hills
+  {
+    const P = pathFromSegments([-260, -150], -Math.PI / 2 - 0.3, [
+      ['S', 60], ['A', 70, -60], ['A', 85, 105], ['S', 50], ['A', 48, -95], ['A', 130, 45], ['S', 90], ['A', 42, 110], ['A', 60, -125], ['S', 110],
+      ['A', 160, 30], ['A', 55, -80], ['S', 70], ['A', 90, 70], ['S', 140],
+    ]);
+    addRoad('canyon', 'Canyon Run', 'road', linkTo(P, 'loop'), false, true);
+  }
+  // Lakeside: a flowing loop around the lake
+  {
+    const L0 = L.lake, P = [];
+    for (let k = 0; k < 14; k++) { const a = (k / 14) * Math.PI * 2; const r = 300 + 40 * Math.sin(a * 3 + 1); P.push([L0[0] + Math.cos(a) * r, L0[1] + Math.sin(a) * r * 0.85]); }
+    addRoad('lakeside', 'Lakeside Drive', 'road', P, true);
+  }
+  // Ridge Road: long sweepers and blind crests across the eastern hills
+  {
+    const P = pathFromSegments([780, -820], -Math.PI / 2 + 0.5, [
+      ['S', 120], ['A', 220, -35], ['S', 100], ['A', 180, 55], ['S', 140], ['A', 260, -45], ['A', 120, 70], ['S', 100], ['A', 300, -30], ['S', 160],
+    ]);
+    addRoad('ridge', 'Ridge Road', 'road', linkTo(P, 'loop'), false, true);
+  }
   // cross roads through the festival
   addRoad('north', 'Festival Road', 'road', [[-30, -1120], [60, -800], [-40, -450], [40, -150], [0, 40], [-50, 300], [40, 650], [0, 980]]);
   addRoad('east', 'Town Road', 'road', [[-1360, -40], [-1000, 60], [-650, -60], [-300, 80], [0, 40], [380, 160], [700, 220], [860, 250]]);
@@ -126,7 +184,7 @@ export function generateWorld(seed = 7) {
   for (const r of roads) {
     const P = r.pts, M = P.length;
     let h = P.map(([x, z]) => Math.max(sampleRaw(x, z), SEA + 2.5));
-    const win = r.type === 'runway' ? 60 : r.type === 'street' ? 20 : 14;
+    const win = r.type === 'runway' ? 60 : r.type === 'street' ? 20 : r.type === 'highway' ? 12 : r.type === 'dirt' ? 4 : 6;
     for (let pass = 0; pass < 3; pass++) {
       const o = new Float32Array(M);
       for (let i = 0; i < M; i++) {
@@ -147,6 +205,28 @@ export function generateWorld(seed = 7) {
     }
     r.h = Float32Array.from(h);
     r.length = polylineLength(P, r.closed);
+    // superelevation: bank corners (tan of the cross slope, + = outside raised)
+    const turn = new Float32Array(M);
+    for (let i = 0; i < M; i++) {
+      const a0 = P[r.closed ? (i - 3 + M) % M : Math.max(0, i - 3)], a1 = P[i], a2 = P[r.closed ? (i + 3) % M : Math.min(M - 1, i + 3)];
+      const t1x = a1[0] - a0[0], t1z = a1[1] - a0[1], t2x = a2[0] - a1[0], t2z = a2[1] - a1[1];
+      const cross = t1x * t2z - t1z * t2x, l = Math.hypot(t1x, t1z) * Math.hypot(t2x, t2z) || 1;
+      const ang = Math.asin(clamp(cross / l, -1, 1)); // turning per ~12 m
+      const curv = ang / 12;
+      const maxB = r.type === 'highway' ? 0.05 : r.type === 'pass' ? 0.09 : r.type === 'road' ? 0.07 : 0;
+      turn[i] = clamp(curv * 7, -1, 1) * maxB;
+    }
+    r.bank = new Float32Array(M);
+    for (let i = 0; i < M; i++) { let sum = 0, c = 0; for (let k = -6; k <= 6; k++) { let j = i + k; if (r.closed) j = (j + M) % M; else if (j < 0 || j >= M) continue; sum += turn[j]; c++; } r.bank[i] = sum / c; }
+    // kicker jumps on the trails
+    r.jumps = [];
+    if (r.type === 'dirt' && M > 120) {
+      for (const f of [0.3, 0.72]) {
+        const ci = Math.floor(M * f);
+        r.jumps.push(ci);
+        for (let k = -10; k <= 3; k++) { const j = (ci + k + M) % M; const up = k <= 0 ? (k + 10) / 10 : Math.max(0, 1 - k / 1.5); r.h[j] += 2.3 * up * up; }
+      }
+    }
   }
   // town and festival are flat plates
   const townH = sampleRaw(T0[0], T0[1]);
@@ -176,7 +256,10 @@ export function generateWorld(seed = 7) {
         const c = idx(ix, iz);
         if (d < dist[c]) {
           dist[c] = d;
-          target[c] = r.h[i] + (r.h[j] - r.h[i]) * t;
+          // lateral side: + = right of travel; bank raises the outside of the turn
+          const side = Math.sign(sx * (cz - z) - sz * (cx - x)) || 1;
+          const bank = r.bank ? r.bank[i] : 0;
+          target[c] = r.h[i] + (r.h[j] - r.h[i]) * t + side * Math.min(d, half + 2) * bank;
           reach[c] = half;
           roadOf[c] = ri;
         }
