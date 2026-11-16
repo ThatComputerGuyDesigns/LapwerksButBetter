@@ -114,9 +114,10 @@ export const DEFAULT_SETUP = {
  * stops harder than real cars; 'real' uses the true-to-life figures.
  */
 export const GRIP_LEVELS = {
-  arcade: { grip: 1.5, brake: 1.6, steer: 1.25 },
-  sport: { grip: 1.22, brake: 1.25, steer: 1.12 },
-  real: { grip: 1, brake: 1, steer: 1 },
+  // transfer: weight-transfer scale (arcade cars stay planted at huge g)
+  arcade: { grip: 3.05, brake: 3.3, steer: 1.35, transfer: 0.3 },
+  sport: { grip: 1.5, brake: 1.6, steer: 1.2, transfer: 0.7 },
+  real: { grip: 1, brake: 1, steer: 1, transfer: 1 },
 };
 export const GAMEPLAY = { ...GRIP_LEVELS.arcade };
 export function setGripLevel(k) { Object.assign(GAMEPLAY, GRIP_LEVELS[k] || GRIP_LEVELS.arcade); }
@@ -147,7 +148,8 @@ export function makeCarParams(setup = DEFAULT_SETUP) {
     wheelbase: B.wheelbase,
     a: B.wheelbase * (1 - B.weightFront),
     b: B.wheelbase * B.weightFront,
-    cgHeight: B.cgHeight,
+    cgHeight: B.cgHeight * GAMEPLAY.transfer,
+    heatScale: 1 / GAMEPLAY.grip,
     trackF: B.trackF,
     trackR: B.trackR,
     wheelR: B.wheelR,
@@ -164,7 +166,9 @@ export function makeCarParams(setup = DEFAULT_SETUP) {
     reverse: 3.2,
     finalDrive: finalBase * s.finalDrive,
     shiftTime: 0.11,
-    aero: { cdA, clA, balance: B.aeroBalance + s.aeroBalance },
+    // arcade grip boosts the tyres; aero grip is scaled back so high-downforce
+    // cars don't stack to absurd corner speeds
+    aero: { cdA, clA: clA / Math.sqrt(GAMEPLAY.grip), balance: B.aeroBalance + s.aeroBalance },
     tire: { ...C, mu: C.mu * B.grip * GAMEPLAY.grip },
     brake: { maxTorque: mass * 9.81 * 1.55 * B.wheelR * GAMEPLAY.brake * Math.max(1, C.mu * B.grip * GAMEPLAY.grip / 1.2), bias: B.brakeBias + s.brakeBias, handbrake: 2600 },
     diffLock: s.diffLock,

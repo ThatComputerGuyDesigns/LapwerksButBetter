@@ -107,7 +107,7 @@ export function createCar(setup) {
     clearcoatRoughness: 0.04,
     iridescence: finish === 'pearl' ? 0.6 : 0,
     iridescenceIOR: 1.6,
-    envMapIntensity: 1.25,
+    envMapIntensity: 1.0,
   });
   const glassMat = new THREE.MeshPhysicalMaterial({ color: 0x1a222c, metalness: 0.2, roughness: 0.04, clearcoat: 1, clearcoatRoughness: 0.02, envMapIntensity: 1.8 });
   const blackMat = new THREE.MeshStandardMaterial({ color: 0x0c0d0f, roughness: 0.55, metalness: 0.2 });
@@ -136,14 +136,35 @@ export function createCar(setup) {
     return Math.min(y, belt(t) - 0.06);
   };
   const SEG_L = 110, SEG_R = 44;
+  // Designed cross-section (unit space: x = fraction of half-width,
+  // y = fraction of section height). Tucked sill, widest point low on the
+  // door, a sharp shoulder crease and a gently crowned deck.
+  const SECTION = [
+    [0.0, 0.0], [0.55, 0.0], [0.82, 0.01], [0.93, 0.05], [0.985, 0.16], [1.0, 0.3], [0.998, 0.45],
+    [0.99, 0.6], [0.978, 0.72], [0.965, 0.8], [0.955, 0.86], // shoulder crease ↓
+    [0.9, 0.935], [0.78, 0.975], [0.55, 0.995], [0.28, 1.005], [0.0, 1.01],
+  ];
+  const secLen = [0];
+  for (let k = 1; k < SECTION.length; k++) secLen.push(secLen[k - 1] + Math.hypot(SECTION[k][0] - SECTION[k - 1][0], (SECTION[k][1] - SECTION[k - 1][1]) * 0.8));
+  const secAt = (q) => {
+    const L = q * secLen[secLen.length - 1];
+    let k = 1;
+    while (k < secLen.length - 1 && secLen[k] < L) k++;
+    const f = (L - secLen[k - 1]) / (secLen[k] - secLen[k - 1] || 1);
+    return [lerp(SECTION[k - 1][0], SECTION[k][0], f), lerp(SECTION[k - 1][1], SECTION[k][1], f)];
+  };
   const sectionPt = (t, theta, out) => {
     const y0 = floorY(t), y1 = belt(t);
-    const yc = (y0 + y1) / 2, hh = (y1 - y0) / 2;
-    const c = Math.cos(theta), s = Math.sin(theta);
-    const yy = yc + hh * spow(s, 2 / P.n);
-    // tumblehome: narrower toward the top of the section
-    const tumble = 1 - 0.1 * smoothstep(0.2, 1, (yy - y0) / Math.max(y1 - y0, 0.01));
-    out.set(halfW(t) * spow(c, 2 / P.n) * tumble, yy, zOf(t));
+    // theta → position around the section: v = 0 bottom, .25 left (+x), .5 top, .75 right
+    let f = (theta + Math.PI / 2) / (Math.PI * 2);
+    f = ((f % 1) + 1) % 1;
+    const side = f <= 0.5 ? 1 : -1;
+    const q = side > 0 ? f / 0.5 : (1 - f) / 0.5;
+    const [xn, yn] = secAt(q);
+    // ends of the car get rounder (nose/tail) so the crease fades out
+    const endSoft = smoothstep(0.1, 0, t) + smoothstep(0.9, 1, t);
+    const xr = lerp(xn, Math.sin(Math.acos(Math.min(1, Math.abs(yn * 2 - 1)))) , Math.min(1, endSoft * 0.7));
+    out.set(side * halfW(t) * xr, y0 + (y1 - y0) * yn, zOf(t));
     return out;
   };
   body.add(lofted(sectionPt, SEG_L, SEG_R, paintMat, { capScale: [0.9, 0.62, 0.0], capOffset: [0.035, 0.065, 0.08], zF, zR }));
@@ -170,9 +191,21 @@ export function createCar(setup) {
     out.set(w * spow(c, 2 / 3.2), yy, zOf(t));
     return out;
   };
-  const cabin = lofted(cabinPt, 60, 36, [glassMat, paintMat], {
+  // greenhouse: glass panes framed by painted A-pillars / roof rails and
+  // black B-pillars (instead of one dark glass bubble)
+  const pillarMat = new THREE.MeshPhysicalMaterial({ color: 0x0b0c0e, roughness: 0.25, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.08 });
+  const cabin = lofted(cabinPt, 72, 48, [glassMat, paintMat, pillarMat], {
     capScale: [0.6, 0], capOffset: [0.0, 0.0], zF, zR,
-    group: C.roofPaint ? (tc, theta) => (Math.abs(theta - Math.PI / 2) < 1.2 && tc > 0.14 && tc < 0.74 ? 1 : 0) : null,
+    group: (tc, theta) => {
+      const a = Math.abs(((theta + Math.PI * 2.5) % (Math.PI * 2)) - Math.PI); // 0 = top, π/2 = side
+      if (a > Math.PI * 0.85) return 2; // underside (hidden)
+      const roof = C.roofPaint ? 1 : 0;
+      if (a < 1.0) return tc > 0.3 && tc < 0.62 ? roof : 0; // roof panel vs screens
+      if (a < 1.28) return C.roofPaint ? 1 : 2; // A-pillars & roof rails
+      if (tc < 0.05 || tc > 0.95) return 2; // C-pillar / base of A-pillar
+      if (Math.abs(tc - 0.5) < 0.035 && C.roofPaint) return 2; // B-pillar
+      return 0; // side windows
+    },
     noCaps: false,
   });
   body.add(cabin);
@@ -188,19 +221,6 @@ export function createCar(setup) {
       liner.rotation.y = 0;
       liner.position.set(0, wheelR, az);
       body.add(liner);
-    }
-  }
-
-  // ---------------- wheel-arch lips (define the arches, read as real panels)
-  for (const az of axles) {
-    const tA = (az - zR) / (zF - zR);
-    const xw = halfW(tA) * 0.985;
-    for (const sx of [1, -1]) {
-      const lip = new THREE.Mesh(new THREE.TorusGeometry(archR + 0.012, 0.022, 8, 32, Math.PI * 1.04), B.model === 'rally' || B.model === 'jdm' ? blackMat : paintMat);
-      lip.rotation.y = Math.PI / 2;
-      lip.rotation.x = -Math.PI * 0.02;
-      lip.position.set(sx * xw, wheelR, az);
-      body.add(lip);
     }
   }
 
@@ -434,24 +454,25 @@ export function lofted(fn, segL, segR, material, opts) {
   for (let k = caps.length - 1; k >= 0; k--) rows.push({ row: ringAt(0, caps[k], -opts.capOffset[k] || 0, 0), t: 0 });
   for (let i = 0; i <= segL; i++) rows.push({ row: ringAt(i / segL), t: i / segL });
   for (let k = 0; k < caps.length; k++) rows.push({ row: ringAt(1, caps[k], opts.capOffset[k] || 0, 1), t: 1 });
-  const groups = [[], []];
+  const nMat = Array.isArray(material) ? material.length : 1;
+  const groups = Array.from({ length: nMat }, () => []);
   for (let r = 0; r < rows.length - 1; r++) {
     const A = rows[r].row, Bq = rows[r + 1].row;
     const tc = (rows[r].t + rows[r + 1].t) / 2;
     for (let j = 0; j < segR; j++) {
       const theta = ((j + 0.5) / segR) * Math.PI * 2 - Math.PI / 2;
-      const gi = opts.group ? opts.group(tc, theta) : 0;
-      groups[gi].push(A[j], Bq[j], A[j + 1], A[j + 1], Bq[j], Bq[j + 1]);
+      const gi = opts.group ? Math.min(nMat - 1, opts.group(tc, theta)) : 0;
+      // outward-facing winding (normals point away from the body)
+      groups[gi].push(A[j], A[j + 1], Bq[j], A[j + 1], Bq[j + 1], Bq[j]);
     }
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  const all = groups[0].concat(groups[1]);
-  geo.setIndex(all);
-  if (Array.isArray(material)) {
-    geo.addGroup(0, groups[0].length, 0);
-    geo.addGroup(groups[0].length, groups[1].length, 1);
+  geo.setIndex(groups.flat());
+  if (nMat > 1) {
+    let start = 0;
+    groups.forEach((g, k) => { geo.addGroup(start, g.length, k); start += g.length; });
   }
   geo.computeVertexNormals();
   // weld normals across the seam (theta wraps)
@@ -546,7 +567,7 @@ export function makeSync(body, wheels, tailMat, revMat) {
       wheels[i].steer.rotation.y = w.steer;
       wheels[i].spin.rotation.x = w.spin;
     }
-    tailMat.emissiveIntensity = car.brake > 0.05 ? 5.5 : 0.6;
+    tailMat.emissiveIntensity = car.brake > 0.05 ? 3 : 0.5;
     if (revMat) revMat.emissiveIntensity = car.gear === -1 ? 3 : 0;
   };
 }

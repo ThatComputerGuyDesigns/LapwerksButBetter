@@ -10,8 +10,8 @@ export function makeGradePass() {
       speed: { value: 0 },
       vignette: { value: 0.32 },
       saturation: { value: 1.12 },
-      contrast: { value: 1.08 },
-      warmth: { value: 0.03 },
+      contrast: { value: 1.04 },
+      warmth: { value: 0.015 },
     },
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
     fragmentShader: `

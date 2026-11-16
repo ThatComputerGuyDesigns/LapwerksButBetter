@@ -39,8 +39,9 @@ assets: every texture, model and sound is generated in code.
 - **Race mode.** Grid start against 3, 5 or 7 AI rivals over 2–10 laps, with three difficulty
   levels. Rivals overtake, defend and keep their distance in traffic, and cars collide with
   each other. You get a live leaderboard with gaps, your position, and a results screen.
-- **Grip levels.** Arcade (default) brakes about 30% shorter and turns about 30% tighter than
-  real cars. Sport sits in between, and Realistic uses true-to-life figures.
+- **Grip levels.** Arcade (default) brakes from 100 km/h in about 12 m and turns at about 3 g,
+  roughly a third of real-car distances. Sport sits in between, and Realistic uses true-to-life
+  figures.
 - **Racing.** Start lights, lap and sector timing, a live delta, track limits, a ghost of your
   best lap, saved personal bests, a colour-coded driving line, five cameras, tyre smoke,
   skid marks, and synthesised engine, tyre, kerb, wind and impact audio.

@@ -25,15 +25,16 @@ export function performanceStats(setup) {
   car.assists = { ...ASSIST_PRESETS.casual, autoShift: true };
   car.reset(0, 0);
   for (const w of car.wheels) w.temp = p.tire.optTemp;
-  const dt = 1 / 120;
-  let t = 0, t100 = null, vmax = 0;
+  const dt = 1 / 240; // same rate as the game (stiff arcade tyres need it)
+  let t = 0, t100 = null, vmax = 0, this_last = null;
   while (t < 60) {
     car.step(dt, { throttle: 1, brake: 0, steer: 0 });
     for (const w of car.wheels) w.temp = p.tire.optTemp;
     t += dt;
     if (t100 == null && car.u >= 27.78) t100 = t;
-    if (car.u > vmax + 0.01) vmax = car.u;
-    else if (t > 20) break;
+    vmax = Math.max(vmax, car.u);
+    // stop once speed gain over the last second is negligible
+    if (Math.abs(t % 1) < dt) { if (t > 15 && car.u - (this_last ?? 0) < 0.05) break; this_last = car.u; }
   }
   // lateral capacity at 120 km/h including downforce
   const v = 33.3;
@@ -79,7 +80,7 @@ export class Garage {
     this.turntable = new THREE.Group();
     this.turntable.position.y = 0.08;
     s.add(this.turntable);
-    const key = new THREE.DirectionalLight(0xffffff, 2.2);
+    const key = new THREE.DirectionalLight(0xffffff, 1.8);
     key.position.set(5, 9, 4);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
@@ -90,7 +91,7 @@ export class Garage {
     const rim = new THREE.DirectionalLight(0xbfd8ff, 1.4);
     rim.position.set(-6, 4, -6);
     s.add(rim);
-    const warm = new THREE.PointLight(0xff7a3d, 18, 14, 2);
+    const warm = new THREE.PointLight(0xff7a3d, 3, 9, 2);
     warm.position.set(-3, 1.2, 4);
     s.add(warm);
     // soft overhead light panels (emissive) for nice reflections in the paint
@@ -250,7 +251,7 @@ export class Garage {
     // narrow / portrait windows so the whole car always fits
     const wide = window.innerWidth > 820;
     const visibleAspect = wide ? (window.innerWidth - 400) / window.innerHeight : this.camera.aspect;
-    const r = 8.4 * Math.max(1, 1.55 / Math.max(visibleAspect, 0.5)) * (wide ? 1 : 1.25);
+    const r = 7.6 * clamp(1.2 / Math.max(visibleAspect, 0.5), 1, 1.45) * (wide ? 1 : 1.2);
     this.camera.setViewOffset(window.innerWidth, window.innerHeight, wide ? 200 : 0, wide ? 0 : 120, window.innerWidth, window.innerHeight);
     this.camera.position.set(Math.sin(this.yaw) * r, 2.3, Math.cos(this.yaw) * r);
     this.camera.lookAt(0, 0.55, 0);

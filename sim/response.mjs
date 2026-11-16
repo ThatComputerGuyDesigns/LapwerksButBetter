@@ -25,10 +25,11 @@ export function response(setup = {}, assist = 'casual', V = 28) {
     car.step(dt, { throttle: clamp(e * 0.8 + iE * 0.4, 0, 1), brake: 0, steer: s });
     rows.push([t, car.r, car.ay, Math.atan2(car.v, car.u)]);
   }
-  const rEnd = rows[rows.length - 1][1];
+  // reference: yaw rate 1.5 s after the input (speed bleeds off at huge g)
+  const rEnd = rows.find((r) => r[0] >= 1.7)[1];
   const t90 = rows.find((r) => r[0] > 0.2 && Math.abs(r[1]) >= 0.9 * Math.abs(rEnd))?.[0] - 0.2;
   const tg = rows.find((r) => r[0] > 0.2 && Math.abs(r[2]) >= 4.9)?.[0] - 0.2;
-  const peak = Math.max(...rows.map((r) => Math.abs(r[1])));
+  const peak = Math.max(...rows.filter((r) => r[0] < 1.7).map((r) => Math.abs(r[1])));
   return { t90, tHalfG: tg, overshoot: peak / Math.abs(rEnd) - 1, latG: Math.abs(rows[rows.length - 1][2]) / 9.81, beta: Math.max(...rows.map((r) => Math.abs(r[3]))) * 57.3 };
 }
 

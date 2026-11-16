@@ -564,7 +564,7 @@ class App {
       this.world.renderPass.scene = this.garage.scene;
       this.world.renderPass.camera = this.garage.camera;
       const prevExp = this.world.renderer.toneMappingExposure;
-      this.world.renderer.toneMappingExposure = 0.8;
+      this.world.renderer.toneMappingExposure = 0.65;
       if (this.world.quality === 'low') this.world.renderer.render(this.garage.scene, this.garage.camera);
       else this.world.composer.render();
       this.world.renderer.toneMappingExposure = prevExp;

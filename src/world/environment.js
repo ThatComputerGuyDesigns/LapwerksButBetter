@@ -13,9 +13,9 @@ import { rng, smoothstep, clamp } from '../core/math.js';
 import * as TX from './textures.js';
 
 export const THEMES = {
-  golden: { name: 'Golden Hour', elevation: 11, azimuth: 235, turbidity: 6, rayleigh: 2.2, mie: 0.006, sun: 0xffd2a1, sunI: 3.4, hemiSky: 0xbcd3ff, hemiGround: 0x5a4a32, hemiI: 0.55, fog: 0xc9b9a6, exposure: 0.62, envI: 0.9, clouds: 0.5 },
-  midday: { name: 'Midday', elevation: 52, azimuth: 160, turbidity: 3, rayleigh: 1.2, mie: 0.004, sun: 0xfff6e8, sunI: 3.6, hemiSky: 0xcfe2ff, hemiGround: 0x4b5a3a, hemiI: 0.6, fog: 0xbcd0e6, exposure: 0.48, envI: 1.0, clouds: 0.42 },
-  dusk: { name: 'Dusk', elevation: 3.5, azimuth: 280, turbidity: 8, rayleigh: 3, mie: 0.01, sun: 0xff9a6b, sunI: 2.4, hemiSky: 0x9aa8d6, hemiGround: 0x3b2c2a, hemiI: 0.55, fog: 0xa88f9a, exposure: 0.85, envI: 0.85, clouds: 0.38 },
+  golden: { name: 'Golden Hour', elevation: 21, azimuth: 235, turbidity: 4.5, rayleigh: 1.8, mie: 0.0025, sun: 0xffdcb4, sunI: 2.7, hemiSky: 0xbcd3ff, hemiGround: 0x5a4a32, hemiI: 0.6, fog: 0xb9b3aa, exposure: 0.5, envI: 0.9, clouds: 0.5 },
+  midday: { name: 'Midday', elevation: 55, azimuth: 160, turbidity: 2.6, rayleigh: 1.1, mie: 0.0022, sun: 0xfff6e8, sunI: 2.9, hemiSky: 0xcfe2ff, hemiGround: 0x4b5a3a, hemiI: 0.6, fog: 0xb4c6da, exposure: 0.42, envI: 1.0, clouds: 0.42 },
+  dusk: { name: 'Dusk', elevation: 7, azimuth: 280, turbidity: 6, rayleigh: 2.6, mie: 0.004, sun: 0xffa47a, sunI: 2.1, hemiSky: 0x9aa8d6, hemiGround: 0x3b2c2a, hemiI: 0.6, fog: 0x978896, exposure: 0.68, envI: 0.85, clouds: 0.38 },
 };
 
 export class World {
@@ -43,10 +43,10 @@ export class World {
     // sun lens flare (subtle)
     this.flareLight = new THREE.PointLight(0xffffff, 0, 0);
     const flare = new Lensflare();
-    flare.addElement(new LensflareElement(radialTexture('rgba(255,244,220,0.9)', 'rgba(255,200,120,0)', 256), 380, 0, new THREE.Color(1, 0.95, 0.85)));
-    flare.addElement(new LensflareElement(radialTexture('rgba(255,210,150,0.35)', 'rgba(255,180,100,0)', 128), 70, 0.45));
-    flare.addElement(new LensflareElement(radialTexture('rgba(160,200,255,0.25)', 'rgba(120,160,255,0)', 128), 110, 0.7));
-    flare.addElement(new LensflareElement(radialTexture('rgba(255,230,190,0.2)', 'rgba(255,200,140,0)', 128), 50, 0.95));
+    flare.addElement(new LensflareElement(radialTexture('rgba(255,244,220,0.45)', 'rgba(255,200,120,0)', 256), 150, 0, new THREE.Color(1, 0.95, 0.85)));
+    flare.addElement(new LensflareElement(radialTexture('rgba(255,210,150,0.18)', 'rgba(255,180,100,0)', 128), 70, 0.45));
+    flare.addElement(new LensflareElement(radialTexture('rgba(160,200,255,0.12)', 'rgba(120,160,255,0)', 128), 110, 0.7));
+    flare.addElement(new LensflareElement(radialTexture('rgba(255,230,190,0.1)', 'rgba(255,200,140,0)', 128), 50, 0.95));
     this.flareLight.add(flare);
     this.scene.add(this.flareLight);
     this.sunDir = new THREE.Vector3();
@@ -78,7 +78,7 @@ export class World {
     this.composer = new EffectComposer(this.renderer, rt);
     this.renderPass = new RenderPass(this.scene, this.camera);
     this.composer.addPass(this.renderPass);
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.32, 0.45, 2.2);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.16, 0.35, 3.2);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     this.grade = makeGradePass();
@@ -124,7 +124,7 @@ export class World {
     u.turbidity.value = t.turbidity;
     u.rayleigh.value = t.rayleigh;
     u.mieCoefficient.value = t.mie;
-    u.mieDirectionalG.value = 0.82;
+    u.mieDirectionalG.value = 0.7;
     const phi = THREE.MathUtils.degToRad(90 - t.elevation);
     const theta = THREE.MathUtils.degToRad(t.azimuth);
     this.sunDir.setFromSphericalCoords(1, phi, theta);

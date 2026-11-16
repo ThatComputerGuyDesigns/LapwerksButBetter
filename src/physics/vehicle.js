@@ -304,7 +304,7 @@ export class Vehicle {
       const sv = Math.hypot(om * R - vl, vt);
       w.slipVel = sv;
       // temperature (surface tracks fast, core slow)
-      const heatIn = (Math.abs(fl) * Math.abs(om * R - vl) + Math.abs(ft) * Math.abs(vt)) * 0.00012 * tire.heat
+      const heatIn = (Math.abs(fl) * Math.abs(om * R - vl) + Math.abs(ft) * Math.abs(vt)) * 0.00012 * tire.heat * (p.heatScale ?? 1)
         + Fz * Math.abs(vl) * 0.000016;
       const cool = (w.temp - AMBIENT) * (0.01 + 0.0009 * Math.abs(vl)) + (w.temp - w.core) * 0.05;
       w.temp = Math.min(160, w.temp + (heatIn - cool) * dt);

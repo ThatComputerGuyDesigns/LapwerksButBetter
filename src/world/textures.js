@@ -273,8 +273,10 @@ export function liveryTexture(setup) {
   // v: 0 bottom, .25 left side, .5 top, .75 right side ; u: 0 rear → 1 front
   ctx.fillStyle = acc;
   if (setup.livery === 'stripes') {
-    ctx.fillRect(0, H * 0.47, W, H * 0.022);
-    ctx.fillRect(0, H * 0.508, W, H * 0.022);
+    // twin stripes over the top, stopping short of the nose where the
+    // section tightens
+    ctx.fillRect(0, H * 0.47, W * 0.9, H * 0.022);
+    ctx.fillRect(0, H * 0.508, W * 0.9, H * 0.022);
   } else if (setup.livery === 'band') {
     ctx.fillRect(0, H * 0.205, W, H * 0.035);
     ctx.fillRect(0, H * 0.76, W, H * 0.035);
@@ -285,6 +287,19 @@ export function liveryTexture(setup) {
     ctx.fillRect(0, H * 0.2, W, H * 0.008);
     ctx.fillRect(0, H * 0.792, W, H * 0.008);
   }
+  // panel lines: door shut lines, bonnet / boot seams, sill line
+  ctx.strokeStyle = 'rgba(0,0,0,0.42)';
+  ctx.lineWidth = 2;
+  const vy = (v) => H * (1 - v); // canvas y for texture v (flipY)
+  for (const [va, vb] of [[0.1, 0.36], [0.64, 0.9]]) {
+    for (const u of [0.36, 0.62]) { ctx.beginPath(); ctx.moveTo(W * u, vy(va)); ctx.lineTo(W * u, vy(vb)); ctx.stroke(); }
+    ctx.beginPath(); ctx.moveTo(W * 0.2, vy(va)); ctx.lineTo(W * 0.8, vy(va)); ctx.stroke();
+  }
+  for (const u of [0.8, 0.13]) { ctx.beginPath(); ctx.moveTo(W * u, vy(0.37)); ctx.lineTo(W * u, vy(0.63)); ctx.stroke(); }
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 1;
+  for (const u of [0.362, 0.622]) { ctx.beginPath(); ctx.moveTo(W * u, vy(0.12)); ctx.lineTo(W * u, vy(0.34)); ctx.stroke(); }
+
   // number roundels on both doors
   const num = String(setup.number ?? 7);
   for (const v of [0.25, 0.75]) {
@@ -292,8 +307,8 @@ export function liveryTexture(setup) {
     ctx.save();
     ctx.translate(cx, cy);
     // texture v runs around the body: mirror per side so it reads correctly
-    if (v < 0.5) ctx.scale(-1, 0.5);
-    else ctx.scale(1, -0.5);
+    if (v < 0.5) ctx.scale(1, -0.5);
+    else ctx.scale(-1, 0.5);
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
     ctx.arc(0, 0, 44, 0, Math.PI * 2);
