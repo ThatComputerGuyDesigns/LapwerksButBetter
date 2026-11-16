@@ -70,7 +70,7 @@ export function terrainMaterial({ sandLevel = -1e9, waterLevel = -1e9, snowLevel
         float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(h21(i), h21(i+vec2(1,0)), f.x), mix(h21(i+vec2(0,1)), h21(i+vec2(1,1)), f.x), f.y); }
         vec3 tex2s(sampler2D t, vec2 p, float k){ return mix(texture2D(t, p * 0.11).rgb, texture2D(t, p * 0.027).rgb, k); }
         vec3 triRock(vec3 p, vec3 n){ vec3 b = pow(abs(n), vec3(4.0)); b /= (b.x + b.y + b.z);
-          return texture2D(tRock, p.zy * 0.06).rgb * b.x + texture2D(tRock, p.xz * 0.06).rgb * b.y + texture2D(tRock, p.xy * 0.06).rgb * b.z; }`)
+          return (texture2D(tRock, p.zy * 0.06).rgb * b.x + texture2D(tRock, p.xz * 0.06).rgb * b.y + texture2D(tRock, p.xy * 0.06).rgb * b.z) * vec3(0.62, 0.6, 0.57); }`)
       .replace('#include <map_fragment>', `
         vec2 wp = vWPos.xz;
         float n1 = vn(wp * 0.008) * 0.6 + vn(wp * 0.031) * 0.4;

@@ -29,6 +29,10 @@ import { Garage } from './ui/garage.js';
 import { formatTime, clamp } from './core/math.js';
 import { carShot } from './ui/renders.js';
 import { CoachUI } from './ui/coachUI.js';
+import { generateWorld } from './open/worldgen.js';
+import { buildOpenWorld } from './open/worldMesh.js';
+import { OpenSession } from './open/openSession.js';
+import { OpenHUD } from './open/openHud.js';
 import { dailyChallenge, dayKey, endlessRound, newEndless, newChampionship, recordRound, standings as champStandings, SERIES, POINTS } from './game/challenges.js';
 import { randomTrack } from './track/generator.js';
 
@@ -55,6 +59,7 @@ class App {
     this.career = new Career(store);
     this.careerUI = new CareerUI(this, $('#career'));
     this.coach = new CoachUI(this, $('#coach'));
+    this.openHud = new OpenHUD($('#openhud'));
     this.screen = 'loading';
     this.session = null;
     this.lastT = performance.now();
@@ -141,7 +146,7 @@ class App {
 
   hideAll() {
     this.veil();
-    for (const id of ['home', 'coach', 'reveal', 'preview3d', 'hud', 'pause', 'settings', 'circuits', 'modes', 'results', 'rc', 'rcsetup', 'rcreport', 'career']) $('#' + id).hidden = true;
+    for (const id of ['home', 'coach', 'openhud', 'reveal', 'preview3d', 'hud', 'pause', 'settings', 'circuits', 'modes', 'results', 'rc', 'rcsetup', 'rcreport', 'career']) $('#' + id).hidden = true;
     setGripLevel(this.settings.grip); // race control runs on realistic grip; restore yours
     if (this.editor.active) this.editor.close();
     if (this.pv) this.closePreview3D();
@@ -158,7 +163,11 @@ class App {
     audio.setVolume(this.settings.volume);
     this.screen = 'home';
     $('#home').hidden = false;
-    this.startAttract();
+    if (this.trackStale) {
+      this.trackStale = false;
+      this.world.fogDensity = null;
+      this.loadTrack(this.trackDef).then(() => { if (this.screen === 'home') this.startAttract(); });
+    } else this.startAttract();
     this.updateHomeCard();
     this.updateHomeTiles();
     setTimeout(() => $('#home .tile')?.focus({ preventScroll: true }), 50);
@@ -285,6 +294,45 @@ class App {
     this.world.followShadow(pv.look);
   }
 
+  /** Open world: generate the island once, build it, drive. */
+  async startOpenWorld() {
+    this.hideAll();
+    $('#loader').hidden = false;
+    $('#loader').classList.remove('fade');
+    $('.loader-text').textContent = 'Heading to the festival…';
+    this.tip();
+    await new Promise((r) => setTimeout(r, 40));
+    if (this.session) { this.session.dispose(); this.session = null; }
+    this.restoreSetup();
+    this.world.clearContent();
+    this.trackStale = true;
+    this.openW ||= generateWorld(7);
+    this.world.fogDensity = 0.00009;
+    this.world.setTheme(this.settings.openTheme || 'midday');
+    await new Promise((r) => setTimeout(r, 0));
+    this.openView = buildOpenWorld(this.openW);
+    this.world.content.add(this.openView.group);
+    if (this.openHud.W !== this.openW) this.openHud.setWorld(this.openW);
+    setGripLevel(this.settings.grip);
+    this.session = new OpenSession(this, this.openW, this.openView);
+    this.screen = 'open';
+    $('#openhud').hidden = false;
+    $('#loader').classList.add('fade');
+    setTimeout(() => ($('#loader').hidden = true), 500);
+    this.input.captureKeys = true;
+    this.session.message('WELCOME TO THE FESTIVAL', 'go', 2.5);
+    await audio.unlock();
+  }
+
+  handleOpenKeys() {
+    const I = this.input, s = this.session;
+    if (I.pressed('GP_START')) this.togglePause();
+    if (s.paused) return;
+    if (I.pressed('KeyC') || I.pressed('GP_Y')) s.cycleCamera();
+    if (I.pressed('KeyR') || I.pressed('GP_BACK')) { s.placeOnRoad(s.car.x, s.car.z); s.message('RESET', '', 0.8); }
+    if (I.pressed('KeyF')) this.toggleFps();
+  }
+
   /** Keep the laps of the session that is ending, for Coach. */
   keepSessionLaps() {
     const s = this.session;
@@ -329,8 +377,9 @@ class App {
   }
 
   togglePause(force) {
-    if (this.screen !== 'race' || !this.session) return;
+    if ((this.screen !== 'race' && this.screen !== 'open') || !this.session) return;
     const p = force ?? !this.session.paused;
+    $('#pause [data-p=edit]').hidden = this.screen === 'open';
     this.session.paused = p;
     $('#pause').hidden = !p;
     if (p) audio.silence();
@@ -432,6 +481,7 @@ class App {
     this.homeTilesDone = true;
     // hero renders of the game's own cars; deferred so the menu appears instantly
     const shots = [
+      ['.t-open .t-img', { body: 'rally', paint: '#0f8a8c', accent: '#f2f2f2', livery: 'band', number: 21, finish: 'metallic' }, { yaw: -0.8, dist: 8.2 }],
       ['.t-career .t-img', { body: 'formula', paint: '#ff5a1f', accent: '#111418', livery: 'band', number: 1, finish: 'metallic' }, { yaw: 0.85, dist: 9 }],
       ['.t-race .t-img', { ...this.setup }, { yaw: 0.7, dist: 8.2 }],
       ['.t-control .t-img', { body: 'gt3', paint: '#e8d21d', accent: '#111418', livery: 'stripes', number: 33 }, { yaw: -0.75, dist: 8.2 }],
@@ -980,6 +1030,7 @@ class App {
       else if (go === 'studio') this.openStudio(null);
       else if (go === 'garage') this.openGarage();
       else if (go === 'coach') this.openCoach();
+      else if (go === 'open') this.startOpenWorld();
       else this.openOverlay(go);
     });
     $('#preview3d').addEventListener('click', (e) => {
@@ -1028,7 +1079,7 @@ class App {
       if (!a) return;
       audio.click();
       if (a === 'resume') this.togglePause(false);
-      else if (a === 'restart') { this.togglePause(false); this.startRace(); }
+      else if (a === 'restart') { this.togglePause(false); if (this.screen === 'open') this.session.spawnAtFestival(); else this.startRace(); }
       else if (a === 'camera') this.session?.cycleCamera();
       else if (a === 'settings') this.openOverlay('settings');
       else if (a === 'edit') this.openStudio(this.trackDef);
@@ -1082,7 +1133,7 @@ class App {
         if (!$('#modes').hidden) return this.closeOverlay('modes');
         if (!$('#rcsetup').hidden) return this.closeOverlay('rcsetup');
         if (this.screen === 'control') { if (this.session?.review) return this.rcui.closeReview(); return this.showHome(); }
-        if (this.screen === 'race') return this.togglePause();
+        if (this.screen === 'race' || this.screen === 'open') return this.togglePause();
         if (this.screen === 'garage' || this.screen === 'reveal') return this.showHome();
         if (this.screen === 'preview') return this.openStudio(this.pv?.def);
       }
@@ -1184,6 +1235,13 @@ class App {
     }
     if (scr === 'reveal') this.updateReveal(dt);
     else if (scr === 'preview' && this.pv) this.updatePreview3D(dt);
+    else if (scr === 'open' && this.session) {
+      this.handleOpenKeys();
+      const cmd = this.input.sample(dt, this.session.car.speed);
+      this.session.update(dt, cmd);
+      this.input.rumble(this.session.car);
+      this.openHud.update(this.session);
+    }
     else if (this.session) {
       let cmd = null;
       if (scr === 'race') {

@@ -122,7 +122,8 @@ export class Vehicle {
     this.time += dt;
     const q = (this.q = this.track.query(this.x, this.z, this.hint));
     this.hint = q.i;
-    this.y = q.height;
+    if (this.track.open) this.vertical(q, dt);
+    else this.y = q.height;
 
     // ---------- gearbox
     let thr = clamp(input.throttle || 0, 0, 1);
@@ -212,6 +213,8 @@ export class Vehicle {
       W[0].load *= 1 + ch; W[1].load *= 1 - ch;
     }
     for (const w of W) w.load = Math.max(0, w.load);
+    // airborne (open world crests and jumps): no tyre forces until we land
+    if (this.airborne) for (const w of W) w.load = 0;
 
     // ---------- drivetrain torque
     const ratio = this.gear === -1 ? -p.reverse : this.gear >= 1 ? p.gears[this.gear - 1] : 0;
@@ -286,7 +289,9 @@ export class Vehicle {
       const vl = cx * cd + cy * sd;
       const vt = -cx * sd + cy * cd;
       // surface under this wheel (lateral offset from centerline)
-      const surf = this.surfaceAt(q, q.d + px * fwdLat + py * lefLat);
+      const surf = this.track.surfaceXZ
+        ? this.track.surfaceXZ(this.x + fwdX * px + lefX * py, this.z + fwdZ * px + lefZ * py)
+        : this.surfaceAt(q, q.d + px * fwdLat + py * lefLat);
       w.surface = surf;
       surfaceWorst = Math.max(surfaceWorst, surf);
       const tempF = this.tempGrip(w.temp);
@@ -380,8 +385,7 @@ export class Vehicle {
     Fy -= 0.5 * RHO * p.aero.cdA * 2.5 * v * Math.abs(v);
 
     // gravity along the slope / banking
-    Fx += m * gx;
-    Fy += m * gy;
+    if (!this.airborne) { Fx += m * gx; Fy += m * gy; }
 
     // ---------- integrate body
     const axB = Fx / m, ayB = Fy / m;
@@ -404,6 +408,44 @@ export class Vehicle {
     this.collide(q);
     this.offTrack = Math.abs(q.d) > this.track.half + 1.2;
     this.surface = q.surface;
+  }
+
+  /**
+   * Open-world vertical motion: the car follows the ground while it can; when
+   * the ground falls away faster than gravity (a crest or a ramp) it flies,
+   * then lands. Landing hard scrubs a little speed.
+   */
+  vertical(q, dt) {
+    const g = q.height;
+    if (this.vy == null) { this.vy = 0; this.y = g; this.prevGround = g; }
+    if (!this.airborne) {
+      // vertical speed while glued to the ground
+      const gv = (g - this.prevGround) / dt;
+      const pred = this.y + gv * dt;
+      // leave the ground when it drops away faster than the car can fall
+      if (gv < this.vy - 9.81 * dt * 1.6 && this.speed > 12 && this.vy > -2) {
+        this.airborne = true;
+        this.airTime = 0;
+      } else {
+        this.vy = gv;
+        this.y = g;
+      }
+      void pred;
+    }
+    if (this.airborne) {
+      this.airTime += dt;
+      this.vy -= 9.81 * dt;
+      this.y += this.vy * dt;
+      if (this.y <= g) {
+        const impact = Math.max(0, (this.prevGround != null ? (g - this.prevGround) / dt : 0) - this.vy);
+        this.y = g;
+        this.airborne = false;
+        this.lastLanding = { airTime: this.airTime, impact };
+        this.vy = 0;
+        if (impact > 6) { const k = Math.max(0.85, 1 - (impact - 6) * 0.01); this.u *= k; this.v *= k; }
+      }
+    }
+    this.prevGround = g;
   }
 
   /** Steering map shared by player input and the AI. */

@@ -437,7 +437,7 @@ function mergeGeos(list) {
   return out;
 }
 
-function palmGeometry() {
+export function palmGeometry() {
   // curved trunk + drooping fronds
   const parts = [];
   const trunk = new THREE.CylinderGeometry(0.16, 0.26, 7, 7, 6);
@@ -459,7 +459,7 @@ function palmGeometry() {
   return mergeGeos(parts);
 }
 
-function coniferGeometry() {
+export function coniferGeometry() {
   const R = rng(3);
   const parts = [];
   const trunk = new THREE.CylinderGeometry(0.22, 0.32, 3, 7);
@@ -475,7 +475,7 @@ function coniferGeometry() {
   return mergeGeos(parts);
 }
 
-function broadleafGeometry() {
+export function broadleafGeometry() {
   const R = rng(8);
   const parts = [];
   const trunk = new THREE.CylinderGeometry(0.25, 0.4, 3.6, 7);
