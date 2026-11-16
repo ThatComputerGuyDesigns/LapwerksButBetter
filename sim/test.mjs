@@ -12,6 +12,10 @@ import { startCheck } from './start.mjs';
 import { brakeSteer } from './brakesteer.mjs';
 import { BODIES } from '../src/physics/carSetup.js';
 import { decodeTrack, encodeTrack } from '../src/game/store.js';
+import { computeRacingLine, speedProfile } from '../src/track/racingLine.js';
+import { analyzeTrack, referenceParams } from '../src/track/analysis.js';
+import { parseGPS, circuitFromGPS, circuitFromDescription } from '../src/track/importers.js';
+import { SURF } from '../src/track/track.js';
 import { strokeToControlPoints } from '../src/track/spline.js';
 import { formatTime } from '../src/core/math.js';
 
@@ -130,6 +134,44 @@ for (const [a, min] of [['casual', 45], ['sport', 35], ['pro', 15]]) {
   const c = strokeToControlPoints(st);
   const T = c && buildTrack({ points: c });
   check(T && T.length > 1500, `freehand stroke → ${T ? (T.length / 1000).toFixed(2) : '?'} km circuit`);
+}
+
+// 6. Track Studio: per-point edits, start line, environments, analysis, imports
+{
+  const base = JSON.parse(JSON.stringify(PRESETS[0]));
+  const flat = buildTrack({ ...base, hills: 0 });
+  const raised = JSON.parse(JSON.stringify({ ...base, hills: 0 }));
+  raised.points[6][2] = 15;
+  const Tr = buildTrack(raised);
+  check(Tr.bounds.maxY - Tr.bounds.minY > (flat.bounds.maxY - flat.bounds.minY) + 10, `point height edit raises the road (${(Tr.bounds.maxY - Tr.bounds.minY).toFixed(1)} m)`);
+  const st = JSON.parse(JSON.stringify(base)); st.start = st.points[8].slice(0, 2);
+  const Ts = buildTrack(st);
+  check(Math.hypot(Ts.px[0] - st.start[0], Ts.pz[0] - st.start[1]) < 12, 'start line follows the placed start');
+  const banked = JSON.parse(JSON.stringify({ ...base, banking: 0 })); banked.points[4][3] = 20;
+  const Tb = buildTrack(banked);
+  check(Math.max(...Tb.bank.map(Math.abs)) > 0.25, `per-point banking applied (${((Math.max(...Tb.bank.map(Math.abs)) * 180) / Math.PI).toFixed(0)}°)`);
+  const Td = buildTrack({ ...base, env: 'desert' }), Tst = buildTrack({ ...base, env: 'street' }), Tra = buildTrack({ ...base, env: 'rally' });
+  check(Td.surfTrap === SURF.GRAVEL && Tst.surfRunoff === SURF.ASPHALT && Tra.surfRoad === SURF.DIRT, 'environments set physics surfaces (sand, asphalt run-off, gravel road)');
+  // share code carries studio extras
+  const dressed = { ...raised, name: 'Dressed', env: 'drift', start: [10, 20], objects: [{ type: 'stand', x: 100, z: 50, rot: 1.2 }], cams: [{ x: 1, z: 2 }, { x: 3, z: 4 }], colors: { kerbA: '#0000ff' } };
+  const back = decodeTrack(encodeTrack(dressed));
+  check(back && back.env === 'drift' && back.points[6][2] === 15 && back.objects.length === 1 && back.cams.length === 2 && back.colors.kerbA === '#0000ff' && back.start[0] === 10, 'share code round-trips environment, edits, objects, cameras and colours');
+  // analysis
+  for (const p of PRESETS) {
+    const T = buildTrack(p), line = computeRacingLine(T, { iterations: 300 }), prof = speedProfile(T, line, referenceParams());
+    const A = analyzeTrack(T, line, prof);
+    const ok = Object.values(A.ratings).every((v) => v >= 0 && v <= 10) && A.corners.length === T.corners.length;
+    check(ok, `analysis ${p.name}: ${A.grade} · overtaking ${A.ratings.overtaking.toFixed(1)} · tech ${A.ratings.technicality.toFixed(1)} · fun ${A.ratings.fun.toFixed(1)}`);
+  }
+  // GPS import
+  let gpx = '<gpx><trk><trkseg>';
+  for (let lap = 0; lap < 2; lap++) for (let k = 0; k < 300; k++) { const t = (k / 300) * Math.PI * 2, r = 0.006 * (1 + 0.3 * Math.sin(2 * t)); gpx += `<trkpt lat="${52 + r * Math.sin(t)}" lon="${-1 + r * 1.6 * Math.cos(t)}"><ele>${100 + 8 * Math.sin(t)}</ele></trkpt>`; }
+  const g = circuitFromGPS(parseGPS(gpx + '</trkseg></trk></gpx>'));
+  const Tg = buildTrack(g);
+  check(Tg.length > 3500 && Tg.length < 5500 && Tg.bounds.maxY - Tg.bounds.minY > 10, `GPX lap → ${(Tg.length / 1000).toFixed(2)} km with ${(Tg.bounds.maxY - Tg.bounds.minY).toFixed(0)} m elevation`);
+  // describe
+  const r = circuitFromDescription('a 2 km kart track with three hairpins', { seed: 3 });
+  check(r.def.env === 'kart' && Math.abs(buildTrack(r.def).length / 1000 - 2) < 0.3, `describe → ${r.notes.join(', ')}`);
 }
 
 console.log(failed ? `\n${failed} check(s) failed` : '\nall checks passed');

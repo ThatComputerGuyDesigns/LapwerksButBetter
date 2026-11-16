@@ -8,6 +8,8 @@ import { buildTrackScene, runoffHeight, sampleHF } from './world/trackMesh.js';
 import { buildGrass } from './world/grass.js';
 import { buildMountains, buildNature, buildTrackside } from './world/scenery.js';
 import { batchStatic } from './world/batch.js';
+import { buildPlacedObjects } from './world/objects.js';
+import { envOf } from './track/environments.js';
 import { buildTrack, buildHeightfield } from './track/track.js';
 import { computeRacingLine, speedProfile } from './track/racingLine.js';
 import { PRESETS, presetById } from './track/presets.js';
@@ -107,7 +109,10 @@ class App {
     const side = buildTrackside(T, line);
     batchStatic(side);
     this.world.content.add(buildMountains(T), buildNature(T), side);
-    if (this.world.quality !== 'low') {
+    const objs = buildPlacedObjects(T);
+    batchStatic(objs);
+    this.world.content.add(objs);
+    if (this.world.quality !== 'low' && envOf(T.env).tufts) {
       const grass = buildGrass(T, (i, d, x, z) => {
         const wall = T.half + (d >= 0 ? T.runL[i] : T.runR[i]);
         return Math.abs(d) <= wall + 3 ? runoffHeight(T, i, d) : sampleHF(T.heightfield, x, z);
@@ -132,9 +137,11 @@ class App {
 
   hideAll() {
     this.veil();
-    for (const id of ['home', 'reveal', 'hud', 'pause', 'settings', 'circuits', 'modes', 'results', 'rc', 'rcsetup', 'rcreport', 'career']) $('#' + id).hidden = true;
+    for (const id of ['home', 'reveal', 'preview3d', 'hud', 'pause', 'settings', 'circuits', 'modes', 'results', 'rc', 'rcsetup', 'rcreport', 'career']) $('#' + id).hidden = true;
     setGripLevel(this.settings.grip); // race control runs on realistic grip; restore yours
     if (this.editor.active) this.editor.close();
+    if (this.pv) this.closePreview3D();
+    this.world.camera.up.set(0, 1, 0);
     if (this.garage.active) this.garage.close();
     this.input.captureKeys = false;
   }
@@ -176,6 +183,96 @@ class App {
     this.screen = 'studio';
     $('#studio').hidden = false;
     this.editor.open(def);
+  }
+
+  /** Studio → orbitable 3D preview of the circuit (no cars). */
+  async openStudio3D(def) {
+    this.hideAll();
+    $('#loader').hidden = false;
+    $('#loader').classList.remove('fade');
+    $('.loader-text').textContent = 'Building 3D preview…';
+    await new Promise((r) => setTimeout(r, 30));
+    if (this.session) { this.session.dispose(); this.session = null; }
+    await this.loadTrack(def);
+    $('#loader').classList.add('fade');
+    setTimeout(() => ($('#loader').hidden = true), 400);
+    const T = this.track;
+    const b = T.bounds;
+    this.pv = {
+      def, mode: 'orbit', wire: false, s: 0, camIdx: 0, camT: 0,
+      target: new THREE.Vector3((b.minX + b.maxX) / 2, T.meanY, (b.minZ + b.maxZ) / 2),
+      yaw: 0.7, pitch: 0.75, dist: Math.max(b.maxX - b.minX, b.maxZ - b.minZ) * 0.9,
+      pos: new THREE.Vector3(), look: new THREE.Vector3(),
+    };
+    this.screen = 'preview';
+    $('#preview3d').hidden = false;
+    $('.pv3-name').textContent = def.name || 'My Circuit';
+    this.setPreviewMode('orbit');
+  }
+
+  setPreviewMode(m) {
+    const pv = this.pv;
+    if (m === 'tv' && !(pv.def.cams?.length)) { this.toast('Place TV cameras in the editor first (C tool)'); return; }
+    if (m === 'wire') {
+      pv.wire = !pv.wire;
+      this.world.scene.overrideMaterial = pv.wire ? (this.wireMat ||= new THREE.MeshBasicMaterial({ color: 0x4aa8ff, wireframe: true })) : null;
+      this.world.sky.visible = !pv.wire;
+      this.world.scene.background = pv.wire ? new THREE.Color(0x070a0f) : null;
+      $('#preview3d [data-pv=wire]').classList.toggle('on', pv.wire);
+      return;
+    }
+    if (m === 'tv' && pv.mode === 'tv') pv.camIdx = (pv.camIdx + 1) % pv.def.cams.length;
+    pv.mode = m;
+    if (m === 'overhead') { pv.pitch = 1.53; pv.yaw = 0; }
+    if (m === 'orbit' && pv.pitch > 1.4) pv.pitch = 0.75;
+    document.querySelectorAll('#preview3d .seg [data-pv]').forEach((b) => b.classList.toggle('on', b.dataset.pv === m));
+  }
+
+  closePreview3D() {
+    if (!this.pv) return;
+    this.world.scene.overrideMaterial = null;
+    this.world.sky.visible = true;
+    this.world.scene.background = null;
+    $('#preview3d').hidden = true;
+    this.pv = null;
+  }
+
+  updatePreview3D(dt) {
+    const pv = this.pv, T = this.track, cam = this.world.camera;
+    const N = T.N;
+    let pos, look;
+    if (pv.mode === 'flyover') {
+      pv.s = (pv.s + dt * 42) % T.length;
+      const i = Math.floor(pv.s / T.DS) % N;
+      const j = (i + 30) % N, k = (i - 12 + N) % N;
+      const L = this.line;
+      pos = new THREE.Vector3(L.x[k], T.py[k] + 9, L.z[k]);
+      look = new THREE.Vector3(L.x[j], T.py[j] + 1.5, L.z[j]);
+    } else if (pv.mode === 'tv') {
+      const c = pv.def.cams[pv.camIdx % pv.def.cams.length];
+      let bi = 0, bd = Infinity;
+      for (let i = 0; i < N; i += 2) { const d = (T.px[i] - c.x) ** 2 + (T.pz[i] - c.z) ** 2; if (d < bd) { bd = d; bi = i; } }
+      pv.camT += dt;
+      const sweep = Math.round(Math.sin(pv.camT * 0.35) * 40);
+      const q = (bi + sweep + N) % N;
+      pos = new THREE.Vector3(c.x, T.py[bi] + 8, c.z);
+      look = new THREE.Vector3(T.px[q], T.py[q] + 1, T.pz[q]);
+    } else {
+      const p = pv.pitch, d = pv.dist;
+      pos = new THREE.Vector3(pv.target.x + Math.sin(pv.yaw) * Math.cos(p) * d, pv.target.y + Math.sin(p) * d, pv.target.z + Math.cos(pv.yaw) * Math.cos(p) * d);
+      look = pv.target.clone();
+      if (pv.mode === 'orbit' && !pv.dragging) pv.yaw += dt * 0.04;
+    }
+    const k = 1 - Math.exp(-dt * (pv.mode === 'flyover' ? 6 : 10));
+    if (!pv.init) { pv.pos.copy(pos); pv.look.copy(look); pv.init = true; }
+    pv.pos.lerp(pos, k); pv.look.lerp(look, k);
+    cam.position.copy(pv.pos);
+    if (pv.mode === 'overhead') cam.up.set(0, 0, -1); else cam.up.set(0, 1, 0);
+    cam.lookAt(pv.look);
+    cam.fov = pv.mode === 'tv' ? 28 : 50;
+    cam.far = 30000;
+    cam.updateProjectionMatrix();
+    this.world.followShadow(pv.look);
   }
 
   openGarage() {
@@ -643,6 +740,12 @@ class App {
       let csv = 's_m,x_m,y_m,z_m,width_m,bank_rad,curvature_1pm,kerb\n';
       for (let i = 0; i < T.N; i++) csv += `${T.s[i].toFixed(2)},${T.px[i].toFixed(3)},${T.py[i].toFixed(3)},${T.pz[i].toFixed(3)},${T.width},${T.bank[i].toFixed(5)},${T.curv[i].toFixed(6)},${T.kerb[i]}\n`;
       download(new Blob([csv], { type: 'text/csv' }), `${safe}_centerline.csv`);
+    } else if (kind === 'obj') {
+      this.toast('Preparing 3D model…');
+      if (trackHash(def) !== this.trackKey()) await this.loadTrack(def);
+      const { OBJExporter } = await import('three/examples/jsm/exporters/OBJExporter.js');
+      const txt = new OBJExporter().parse(this.trackGroup);
+      download(new Blob([txt], { type: 'text/plain' }), `${safe}.obj`);
     } else if (kind === 'glb') {
       this.toast('Preparing 3D model…');
       if (trackHash(def) !== this.trackKey()) await this.loadTrack(def);
@@ -666,6 +769,40 @@ class App {
       else if (go === 'garage') this.openGarage();
       else this.openOverlay(go);
     });
+    $('#preview3d').addEventListener('click', (e) => {
+      const a = e.target.closest('[data-pv]')?.dataset.pv;
+      if (!a) return;
+      audio.click();
+      const def = this.pv?.def;
+      if (a === 'edit') this.openStudio(def);
+      else if (a === 'drive') { this.startRace(); }
+      else this.setPreviewMode(a);
+    });
+    {
+      const c = this.world.canvas;
+      let d = null;
+      c.addEventListener('contextmenu', (e) => { if (this.screen === 'preview') e.preventDefault(); });
+      c.addEventListener('pointerdown', (e) => {
+        if (this.screen !== 'preview' || !this.pv) return;
+        if (this.pv.mode === 'flyover' || this.pv.mode === 'tv') this.setPreviewMode('orbit');
+        d = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey || this.pv.mode === 'overhead', yaw: this.pv.yaw, pitch: this.pv.pitch, t: this.pv.target.clone() };
+        this.pv.dragging = true;
+      });
+      window.addEventListener('pointermove', (e) => {
+        if (!d || !this.pv) return;
+        const pv = this.pv, dx = e.clientX - d.x, dy = e.clientY - d.y;
+        if (d.pan) {
+          const k = pv.dist / 900;
+          const fx = -Math.sin(pv.yaw), fz = -Math.cos(pv.yaw);
+          pv.target.set(d.t.x - (dx * Math.cos(pv.yaw) - dy * fx) * k, d.t.y, d.t.z - (-dx * Math.sin(pv.yaw) - dy * fz) * k);
+        } else {
+          pv.yaw = d.yaw - dx * 0.005;
+          pv.pitch = clamp(d.pitch + dy * 0.004, 0.06, 1.53);
+        }
+      });
+      window.addEventListener('pointerup', () => { d = null; if (this.pv) this.pv.dragging = false; });
+      c.addEventListener('wheel', (e) => { if (this.screen === 'preview' && this.pv) this.pv.dist = clamp(this.pv.dist * Math.exp(e.deltaY * 0.0012), 25, 6000); }, { passive: true });
+    }
     $('#reveal').addEventListener('click', (e) => {
       const a = e.target.closest('[data-rv]')?.dataset.rv;
       if (!a) return;
@@ -726,6 +863,7 @@ class App {
         if (this.screen === 'control') { if (this.session?.review) return this.rcui.closeReview(); return this.showHome(); }
         if (this.screen === 'race') return this.togglePause();
         if (this.screen === 'garage' || this.screen === 'reveal') return this.showHome();
+        if (this.screen === 'preview') return this.openStudio(this.pv?.def);
       }
       const homeOpen = this.screen === 'home' && $('#settings').hidden && $('#circuits').hidden && $('#modes').hidden && $('#rcsetup').hidden;
       if (homeOpen && /^Arrow(Left|Right|Up|Down)$/.test(e.code)) {
@@ -824,6 +962,7 @@ class App {
       return;
     }
     if (scr === 'reveal') this.updateReveal(dt);
+    else if (scr === 'preview' && this.pv) this.updatePreview3D(dt);
     else if (this.session) {
       let cmd = null;
       if (scr === 'race') {

@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { rng, clamp, smoothstep } from '../core/math.js';
 import { crowdTexture, radialTexture } from './textures.js';
+import { envOf } from '../track/environments.js';
 
 const sampleHF = (hf, x, z) => {
   const fx = clamp((x - hf.minX) / hf.cell, 0, hf.nx - 1.001), fz = clamp((z - hf.minZ) / hf.cell, 0, hf.nz - 1.001);
@@ -19,16 +20,19 @@ export function buildMountains(T) {
   const R0 = Math.max(b.maxX - b.minX, b.maxZ - b.minZ) / 2 + 2300;
   const segA = 220, segR = 10;
   const pos = [], col = [], idx = [];
-  const forest = new THREE.Color(0x2c4430), rock = new THREE.Color(0x5d6169), snow = new THREE.Color(0xe8ebf0);
+  const M = envOf(T.env).mountains;
+  const pal = { alpine: [0x2c4430, 0x5d6169, 0xe8ebf0], desert: [0xb98a58, 0xc9a070, 0xe0c090], city: [0x3a4a3a, 0x60656c, 0x7a7f86], low: [0x3a5236, 0x5d6169, 0x6a6e74] }[M] || [0x2c4430, 0x5d6169, 0xe8ebf0];
+  const forest = new THREE.Color(pal[0]), rock = new THREE.Color(pal[1]), snow = new THREE.Color(pal[2]);
+  const peak = M === 'alpine' ? 1 : M === 'desert' ? 0.55 : 0.3;
   for (let r = 0; r <= segR; r++) {
     for (let a = 0; a <= segA; a++) {
       const t = (a / segA) * Math.PI * 2;
       const rr = R0 + (r / segR) * 1800;
       const ridge = Math.pow(Math.max(0, n.fbm(Math.cos(t) * 3.1 + 10, Math.sin(t) * 3.1, 5) + 0.35), 1.6);
       const prof = Math.sin((r / segR) * Math.PI); // rises then falls away
-      const h = T.meanY - 20 + prof * (140 + ridge * 720);
+      const h = T.meanY - 20 + prof * (140 + ridge * 720) * peak;
       pos.push(cx + Math.cos(t) * rr, h, cz + Math.sin(t) * rr);
-      const rel = (h - T.meanY) / 700;
+      const rel = (h - T.meanY) / (700 * peak);
       const c = forest.clone().lerp(rock, smoothstep(0.15, 0.45, rel)).lerp(snow, smoothstep(0.78, 0.95, rel + (n(t * 9, r) * 0.06)));
       col.push(c.r, c.g, c.b);
     }
@@ -79,7 +83,7 @@ export function buildNature(T) {
     g.add(im);
   };
   add(rockGeo, rocks, new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true }), 0x8a8a86);
-  add(bushGeo, bushes, new THREE.MeshStandardMaterial({ roughness: 0.85, flatShading: true }), 0x3d5a2a);
+  add(bushGeo, bushes, new THREE.MeshStandardMaterial({ roughness: 0.85, flatShading: true }), T.env === 'desert' ? 0x7a7440 : 0x3d5a2a);
   return g;
 }
 
@@ -88,6 +92,7 @@ export function buildTrackside(T, line) {
   const g = new THREE.Group();
   const N = T.N;
   const R = rng(T.def.seed * 19 + 1);
+  const E = envOf(T.env);
   const edgeY = (i, d) => T.py[i] + Math.sign(d) * (T.half + 1.5) * Math.tan(T.bank[i]) - 0.4;
   const at = (i, d) => [T.px[i] + T.nx[i] * d, T.pz[i] + T.nz[i] * d];
 
@@ -104,7 +109,7 @@ export function buildTrackside(T, line) {
   postGeo.translate(0, 2.1, 0);
   const postMat = new THREE.MeshStandardMaterial({ color: 0x8c9198, metalness: 0.7, roughness: 0.4 });
   const posts = [];
-  for (const side of [1, -1]) {
+  for (const side of E.fences ? [1, -1] : []) {
     const wall = side > 0 ? T.wallL : T.wallR;
     const pts = [], uvs = [], idx = [];
     let run = null;
@@ -146,7 +151,7 @@ export function buildTrackside(T, line) {
   const lampMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff2d8, emissiveIntensity: 0.6, roughness: 0.3 });
   const hutMat = new THREE.MeshStandardMaterial({ color: 0xe8e4dc, roughness: 0.7 });
   const roofMat = new THREE.MeshStandardMaterial({ color: 0xd4202a, roughness: 0.6 });
-  for (let s = 120; s < T.length; s += 380) {
+  for (let s = 120; s < T.length; s += E.floodlights ? 380 : 1e9) {
     const i = Math.floor(s / T.DS) % N;
     const side = T.curv[i] > 0 ? -1 : 1;
     const room = side > 0 ? T.runL[i] : T.runR[i];
@@ -182,7 +187,7 @@ export function buildTrackside(T, line) {
   }
 
   // ---- corner grandstands at the biggest braking zones
-  if (line?.profile) {
+  if (line?.profile && E.stands) {
     const v = line.profile.v;
     const zones = [];
     for (let i = 0; i < N; i++) {
@@ -191,7 +196,7 @@ export function buildTrackside(T, line) {
     }
     zones.sort((a, b) => b.drop - a.drop);
     const picked = [];
-    for (const zz of zones) { if (picked.every((p) => Math.min(Math.abs(p.i - zz.i), N - Math.abs(p.i - zz.i)) > 150)) picked.push(zz); if (picked.length >= 3) break; }
+    for (const zz of zones) { if (picked.every((p) => Math.min(Math.abs(p.i - zz.i), N - Math.abs(p.i - zz.i)) > 150)) picked.push(zz); if (picked.length >= E.stands) break; }
     const crowd = crowdTexture();
     const seatMat = new THREE.MeshStandardMaterial({ map: crowd, roughness: 0.85 });
     const steel = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, metalness: 0.7, roughness: 0.4 });

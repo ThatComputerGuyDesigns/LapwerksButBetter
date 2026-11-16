@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { KERB_W, RUNOFF } from '../track/track.js';
 import { clamp, lerp, smoothstep, rng } from '../core/math.js';
 import * as TX from './textures.js';
+import { envOf } from '../track/environments.js';
 
 const up = new THREE.Vector3(0, 1, 0);
 
@@ -80,6 +81,8 @@ export function buildTrackScene(T, line) {
   group.name = 'track';
   const N = T.N;
   const R = rng(T.def.seed * 13 + 1);
+  const E = envOf(T.env);
+  const COL = T.def.colors || {};
 
   // ---------------- road
   const asphalt = TX.asphaltTextures();
@@ -87,6 +90,8 @@ export function buildTrackScene(T, line) {
     map: asphalt.map, roughnessMap: asphalt.roughnessMap, normalMap: asphalt.normalMap,
     normalScale: new THREE.Vector2(0.6, 0.6), roughness: 1, metalness: 0, vertexColors: true,
   });
+  if (E.road === 'gravel') { const gt = TX.gravelTextures(); roadMat.map = gt.map; roadMat.normalMap = gt.normalMap; roadMat.roughnessMap = null; roadMat.color.set(0xb8a68a); }
+  if (COL.road) roadMat.color.set(COL.road);
   {
     const M = 12;
     const B = new GeoBuilder();
@@ -115,8 +120,9 @@ export function buildTrackScene(T, line) {
   }
 
   // ---------------- kerbs (raised, striped)
-  const kerbMat = new THREE.MeshStandardMaterial({ map: TX.kerbTexture(), roughness: 0.55, metalness: 0 });
+  const kerbMat = new THREE.MeshStandardMaterial({ map: TX.kerbTexture(COL.kerbA, COL.kerbB), roughness: 0.55, metalness: 0 });
   for (const side of [1, -1]) {
+    if (E.road === 'gravel') break; // rally stages have no kerbs
     const geo = stripAlong(
       T, (i) => T.kerb[i] === 1,
       (i) => {
@@ -140,7 +146,9 @@ export function buildTrackScene(T, line) {
   const grassT = TX.grassTextures();
   const runoffTex = TX.runoffGrassTexture();
   // tinted to match the terrain's vertex-coloured grass so there is no seam
-  const runoffMat = new THREE.MeshStandardMaterial({ map: runoffTex, normalMap: grassT.normalMap, roughness: 0.97, metalness: 0, color: 0xe6eadc });
+  const runoffMat = new THREE.MeshStandardMaterial({ map: runoffTex, normalMap: grassT.normalMap, roughness: 0.97, metalness: 0, color: new THREE.Color(0xe6eadc).multiply(new THREE.Color(...E.ground)) });
+  if (E.runoff === 'asphalt') { runoffMat.map = asphalt.map; runoffMat.normalMap = asphalt.normalMap; runoffMat.color.set(0x9a9c9e); runoffMat.roughness = 0.9; }
+  else if (E.runoff === 'sand' || E.runoff === 'dirt') { const gt = TX.gravelTextures(); runoffMat.map = gt.map; runoffMat.normalMap = gt.normalMap; runoffMat.color.set(E.runoff === 'sand' ? 0xf0d6a0 : 0xa08060); }
   for (const side of [1, -1]) {
     const geo = stripAlong(
       T, () => true,
@@ -160,6 +168,10 @@ export function buildTrackScene(T, line) {
   // ---------------- gravel traps
   const gravelT = TX.gravelTextures();
   const gravelMat = new THREE.MeshStandardMaterial({ map: gravelT.map, normalMap: gravelT.normalMap, roughness: 1, metalness: 0 });
+  if (E.trap === 'sand') gravelMat.color.set(0xf4d9a2);
+  else if (E.trap === 'dirt') gravelMat.color.set(0xa08060);
+  else if (E.trap === 'asphalt') { gravelMat.map = asphalt.map; gravelMat.normalMap = asphalt.normalMap; gravelMat.color.set(0x8e9092); }
+  const skipTraps = E.trap === 'grass';
   for (const side of [1, -1]) {
     const arr = side > 0 ? T.gravelL : T.gravelR;
     const geo = stripAlong(
@@ -181,12 +193,14 @@ export function buildTrackScene(T, line) {
 
   // ---------------- barriers (steel guard rail, concrete on bridges)
   const steel = new THREE.MeshStandardMaterial({ color: 0xc7ccd3, metalness: 0.85, roughness: 0.32, side: THREE.DoubleSide });
-  const concrete = new THREE.MeshStandardMaterial({ color: 0xb9b6ae, roughness: 0.85, metalness: 0 });
+  const concrete = new THREE.MeshStandardMaterial({ color: COL.wall || 0xb9b6ae, roughness: 0.85, metalness: 0 });
+  if (E.barrier === 'none') { steel.color.set(0x7a5a3a); steel.metalness = 0; steel.roughness = 0.9; } // timber rails on rally stages
+  const concreteWalls = E.barrier === 'concrete';
   const postPositions = [];
   for (const side of [1, -1]) {
     const wallArr = side > 0 ? T.wallL : T.wallR;
     const rail = stripAlong(
-      T, (i) => wallArr[i] === 1 && !T.deck[i],
+      T, (i) => wallArr[i] === 1 && !T.deck[i] && !concreteWalls,
       (i) => {
         const w = (T.half + (side > 0 ? T.runL[i] : T.runR[i])) * side;
         const h = runoffHeight(T, i, w - side * 0.2);
@@ -206,7 +220,7 @@ export function buildTrackScene(T, line) {
     group.add(rm);
     // concrete parapets on bridge decks
     const para = stripAlong(
-      T, (i) => wallArr[i] === 1 && T.deck[i] === 1,
+      T, (i) => wallArr[i] === 1 && (T.deck[i] === 1 || concreteWalls),
       (i) => {
         const w = (T.half + (side > 0 ? T.runL[i] : T.runR[i])) * side;
         const h = runoffHeight(T, i, w - side * 0.3);
@@ -223,7 +237,7 @@ export function buildTrackScene(T, line) {
     pm.castShadow = true; pm.receiveShadow = true;
     group.add(pm);
     for (let i = 0; i < N; i += 2) {
-      if (!wallArr[i] || T.deck[i]) continue;
+      if (!wallArr[i] || T.deck[i] || concreteWalls) continue;
       const w = (T.half + (side > 0 ? T.runL[i] : T.runR[i])) * side + side * 0.12;
       const p = pos(T, i, w, runoffHeight(T, i, w - side * 0.3));
       postPositions.push(p);
@@ -242,8 +256,10 @@ export function buildTrackScene(T, line) {
   // ---------------- tyre walls on the outside of tight corners
   {
     const pos = [];
+    const tyreK = E.barrier === 'tyre' ? 1 / 400 : 1 / (75 / Math.max(E.tyres, 0.01));
     for (let i = 0; i < N; i += 1) {
-      if (Math.abs(T.curv[i]) < 1 / 75) continue;
+      if (!E.tyres && E.barrier !== 'tyre') break;
+      if (Math.abs(T.curv[i]) < tyreK) continue;
       const side = T.curv[i] > 0 ? -1 : 1; // outside of the turn
       for (let k = -12; k <= 22; k++) {
         const j = (i + k + N) % N;

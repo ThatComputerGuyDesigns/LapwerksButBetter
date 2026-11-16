@@ -55,6 +55,23 @@
     <!-- track studio -->
     <section id="studio" class="screen" hidden></section>
 
+    <!-- studio 3D preview -->
+    <section id="preview3d" class="pv3" hidden>
+      <div class="pv3-top"><span class="eyebrow">3D preview</span><h2 class="pv3-name"></h2></div>
+      <nav class="pv3-bar">
+        <div class="seg">
+          <button data-pv="orbit" class="on">Orbit</button>
+          <button data-pv="overhead">Overhead</button>
+          <button data-pv="flyover">Flyover</button>
+          <button data-pv="tv">TV cams</button>
+        </div>
+        <button class="btn" data-pv="wire">Wireframe</button>
+        <span class="pv3-help">Drag to orbit · right-drag or Shift-drag to pan · scroll to zoom</span>
+        <button class="btn ghost" data-pv="edit">Back to editor</button>
+        <button class="btn primary" data-pv="drive"><svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z" /></svg>Test drive</button>
+      </nav>
+    </section>
+
     <!-- garage -->
     <section id="garage" class="screen" hidden></section>
 

@@ -12,6 +12,7 @@ import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflar
 import { radialTexture } from './textures.js';
 import { rng, smoothstep, clamp } from '../core/math.js';
 import * as TX from './textures.js';
+import { envOf } from '../track/environments.js';
 
 export const THEMES = {
   golden: { name: 'Golden Hour', elevation: 21, azimuth: 235, turbidity: 4.5, rayleigh: 1.8, mie: 0.0025, sun: 0xffdcb4, sunI: 2.7, hemiSky: 0xbcd3ff, hemiGround: 0x5a4a32, hemiI: 0.6, fog: 0xb9b3aa, exposure: 0.5, envI: 0.9, clouds: 0.5 },
@@ -213,6 +214,8 @@ export function buildTerrain(T) {
   const uv = new Float32Array(nx * nz * 2);
   const col = new Float32Array(nx * nz * 3);
   const n = T.noise;
+  const E = envOf(T.env);
+  const [gr, gg, gb] = E.ground;
   for (let z = 0; z < nz; z++) for (let x = 0; x < nx; x++) {
     const k = z * nx + x;
     const wx = hf.minX + x * hf.cell, wz = hf.minZ + z * hf.cell;
@@ -227,7 +230,7 @@ export function buildTerrain(T) {
     r = r * (1 - dry * 0.15) + dry * 0.28; g = g * (1 - dry * 0.2) + dry * 0.12; b *= 1 - dry * 0.35;
     r *= 1 - lush * 0.18; g *= 1 - lush * 0.08; b *= 1 - lush * 0.2;
     r = r * (1 - rock) + 1.25 * rock; g = g * (1 - rock) + 0.95 * rock; b = b * (1 - rock) + 0.9 * rock;
-    col[k * 3] = r; col[k * 3 + 1] = g; col[k * 3 + 2] = b;
+    col[k * 3] = r * gr; col[k * 3 + 1] = g * gg; col[k * 3 + 2] = b * gb;
   }
   const idx = [];
   for (let z = 0; z < nz - 1; z++) for (let x = 0; x < nx - 1; x++) {
@@ -252,19 +255,21 @@ export function buildTerrain(T) {
       float tn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(th(i), th(i+vec2(1,0)), f.x), mix(th(i+vec2(0,1)), th(i+vec2(1,1)), f.x), f.y); }`)
       .replace('#include <map_fragment>', `#include <map_fragment>
       float rn = tn(vWPos.xz * 0.35) * 0.6 + tn(vWPos.xz * 1.7) * 0.4;
-      vec3 dirt = vec3(0.36, 0.29, 0.2) * (0.8 + rn * 0.4);
+      vec3 dirt = vec3(${E.dirt.map((v) => v.toFixed(3)).join(', ')}) * (0.8 + rn * 0.4);
       vec3 rockc = vec3(0.42, 0.41, 0.4) * (0.7 + rn * 0.5);
       float sl = vSlope + (rn - 0.5) * 0.08;
+      ${E.sand ? `diffuseColor.rgb = vec3(${E.sand.map((v) => v.toFixed(3)).join(', ')}) * (0.82 + rn * 0.3);` : ''}
       diffuseColor.rgb = mix(diffuseColor.rgb, dirt, smoothstep(0.1, 0.2, sl) * 0.75);
       diffuseColor.rgb = mix(diffuseColor.rgb, rockc, smoothstep(0.22, 0.34, sl));`);
   };
+  mat.customProgramCacheKey = () => `terrain-${T.env}`; // shader text depends on the environment
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true;
   mesh.name = 'terrain';
   // distant horizon skirt so the world never ends abruptly
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(1, 2, 64, 1),
-    new THREE.MeshStandardMaterial({ color: 0x4f6a3a, roughness: 1 }),
+    new THREE.MeshStandardMaterial({ color: E.sand ? new THREE.Color(...E.sand).multiplyScalar(0.8) : new THREE.Color(0x4f6a3a).multiply(new THREE.Color(gr, gg, gb)), roughness: 1 }),
   );
   const cx = (T.bounds.minX + T.bounds.maxX) / 2, cz = (T.bounds.minZ + T.bounds.maxZ) / 2;
   const rIn = Math.min(hf.nx, hf.nz) * hf.cell * 0.48;
@@ -281,8 +286,10 @@ export function buildVegetation(T, { density = 1 } = {}) {
   const hf = T.heightfield;
   const R = rng(T.def.seed * 101 + 7);
   const n = T.noise;
+  const E = envOf(T.env);
+  density *= E.trees.density;
   const conifer = coniferGeometry();
-  const broad = broadleafGeometry();
+  const broad = E.trees.palm ? palmGeometry() : broadleafGeometry();
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 });
   const listC = [], listB = [];
   const minClear = T.half + 15 + 10;
@@ -304,7 +311,8 @@ export function buildVegetation(T, { density = 1 } = {}) {
       new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), R() * Math.PI * 2),
       new THREE.Vector3(s, s * (0.85 + R() * 0.35), s),
     );
-    (cluster > 0.12 || R() < 0.35 ? listC : listB).push(m);
+    const pine = E.trees.palm ? false : E.trees.pine > 0.6 ? R() < E.trees.pine + 0.1 : cluster > 0.12 || R() < E.trees.pine * 0.55;
+    (pine ? listC : listB).push(m);
   }
   const g = new THREE.Group();
   // split into 220 m tiles so the renderer can frustum-cull (and skip
@@ -390,6 +398,28 @@ function mergeGeos(list) {
   out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   out.setAttribute('color', new THREE.BufferAttribute(col, 3));
   return out;
+}
+
+function palmGeometry() {
+  // curved trunk + drooping fronds
+  const parts = [];
+  const trunk = new THREE.CylinderGeometry(0.16, 0.26, 7, 7, 6);
+  const tp = trunk.attributes.position;
+  for (let i = 0; i < tp.count; i++) { const y = tp.getY(i) + 3.5; tp.setX(i, tp.getX(i) + 0.05 * y * y * 0.12); }
+  trunk.translate(0, 3.5, 0);
+  colorize(trunk, [0.45, 0.36, 0.25]);
+  parts.push(trunk);
+  for (let k = 0; k < 7; k++) {
+    const leaf = new THREE.ConeGeometry(0.5, 3.6, 4, 1);
+    leaf.scale(1, 1, 0.25);
+    leaf.translate(0, 1.8, 0);
+    leaf.rotateZ(1.95);
+    leaf.rotateY((k / 7) * Math.PI * 2);
+    leaf.translate(0.3, 7, 0);
+    colorize(leaf, [0.28, 0.48, 0.2]);
+    parts.push(leaf);
+  }
+  return mergeGeos(parts);
 }
 
 function coniferGeometry() {

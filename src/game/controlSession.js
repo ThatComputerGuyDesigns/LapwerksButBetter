@@ -55,8 +55,18 @@ export class ControlSession extends DriveSession {
   buildCameraPosts() {
     const T = this.T;
     this.posts = [];
-    // TV posts every ~260 m, on the outside of the nearest corner, raised
-    for (let s = 0; s < T.length - 120; s += 260) {
+    // camera positions placed in the Track Studio take priority
+    const cams = T.def.cams || [];
+    if (cams.length >= 2) {
+      for (const c of cams) {
+        let bi = 0, bd = Infinity;
+        for (let i = 0; i < T.N; i += 2) { const d = (T.px[i] - c.x) ** 2 + (T.pz[i] - c.z) ** 2; if (d < bd) { bd = d; bi = i; } }
+        this.posts.push({ s: T.s[bi], i: bi, x: c.x, z: c.z, y: T.py[bi] + 8 });
+      }
+      this.posts.sort((a, b) => a.s - b.s);
+    }
+    // otherwise TV posts every ~260 m, on the outside of the nearest corner, raised
+    for (let s = 0; s < T.length - 120 && cams.length < 2; s += 260) {
       let i = Math.floor(s / T.DS) % T.N;
       let bestK = 0, bestC = 0;
       for (let k = 0; k < 60; k++) { const c = Math.abs(T.curv[(i + k) % T.N]); if (c > bestC) { bestC = c; bestK = k; } }

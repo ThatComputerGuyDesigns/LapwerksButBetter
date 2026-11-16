@@ -37,7 +37,9 @@ export const store = {
 
 /** Stable key for a track definition (shape + parameters). */
 export function trackHash(def) {
-  const s = JSON.stringify([def.points.map((p) => [Math.round(p[0]), Math.round(p[1])]), def.width, def.hills, def.banking, def.seed]);
+  const base = [def.points.map((p) => [Math.round(p[0]), Math.round(p[1])]), def.width, def.hills, def.banking, def.seed];
+  const ext = trackExtras(def);
+  const s = JSON.stringify(ext ? [...base, ext, def.theme] : base);
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
   return (h >>> 0).toString(36);
@@ -51,8 +53,33 @@ function readVar(bytes, o) { let n = 0, s = 0, b; do { b = bytes[o.i++]; n |= (b
 
 const THEMES = ['golden', 'midday', 'dusk'];
 
+// Studio data beyond the outline: environment, start line, per-point
+// elevation/banking, placed objects, TV cameras and colours.
+function trackExtras(def) {
+  const ext = {};
+  if (def.env && def.env !== 'gp') ext.env = def.env;
+  if (def.start) ext.st = def.start.map((v) => Math.round(v));
+  const pp = [];
+  def.points.forEach((p, i) => { if (p[2] || p[3] != null) pp.push([i, Math.round((p[2] || 0) * 10) / 10, p[3] ?? null]); });
+  if (pp.length) ext.pp = pp;
+  if (def.objects?.length) ext.ob = def.objects.map((o) => [o.type, Math.round(o.x), Math.round(o.z), Math.round((o.rot || 0) * 100) / 100]);
+  if (def.cams?.length) ext.cm = def.cams.map((c) => [Math.round(c.x), Math.round(c.z)]);
+  if (def.colors) ext.co = def.colors;
+  return Object.keys(ext).length ? ext : null;
+}
+
+function applyExtras(def, ext) {
+  if (ext.env) def.env = ext.env;
+  if (ext.st) def.start = ext.st;
+  for (const [i, y, b] of ext.pp || []) if (def.points[i]) { def.points[i][2] = y; if (b != null) def.points[i][3] = b; }
+  if (ext.ob) def.objects = ext.ob.map(([type, x, z, rot]) => ({ type, x, z, rot }));
+  if (ext.cm) def.cams = ext.cm.map(([x, z]) => ({ x, z }));
+  if (ext.co) def.colors = ext.co;
+}
+
 export function encodeTrack(def) {
-  const bytes = [1]; // version
+  const ext = trackExtras(def);
+  const bytes = [ext ? 2 : 1]; // version (2 = with studio extras)
   pushVar(bytes, Math.round(def.width * 2));
   pushVar(bytes, Math.round(def.hills * 100));
   pushVar(bytes, Math.round(def.banking * 100));
@@ -68,6 +95,11 @@ export function encodeTrack(def) {
   const name = new TextEncoder().encode((def.name || '').slice(0, 40));
   pushVar(bytes, name.length);
   bytes.push(...name);
+  if (ext) {
+    const e = new TextEncoder().encode(JSON.stringify(ext));
+    pushVar(bytes, e.length);
+    bytes.push(...e);
+  }
   let bin = '';
   for (const b of bytes) bin += String.fromCharCode(b);
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -80,7 +112,7 @@ export function decodeTrack(code) {
     const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
     const o = { i: 0 };
     const ver = bytes[o.i++];
-    if (ver !== 1) return null;
+    if (ver !== 1 && ver !== 2) return null;
     const width = readVar(bytes, o) / 2;
     const hills = readVar(bytes, o) / 100;
     const banking = readVar(bytes, o) / 100;
@@ -96,7 +128,15 @@ export function decodeTrack(code) {
     }
     const nl = readVar(bytes, o);
     const name = new TextDecoder().decode(bytes.slice(o.i, o.i + nl)) || 'Shared Circuit';
-    return { id: 'shared-' + trackHash({ points, width, hills, banking, seed }), name, width, hills, banking, seed, theme, points };
+    o.i += nl;
+    const def = { name, width, hills, banking, seed, theme, points };
+    if (ver === 2) {
+      const el = readVar(bytes, o);
+      const ext = JSON.parse(new TextDecoder().decode(bytes.slice(o.i, o.i + el)));
+      applyExtras(def, ext);
+    }
+    def.id = 'shared-' + trackHash(def);
+    return def;
   } catch {
     return null;
   }

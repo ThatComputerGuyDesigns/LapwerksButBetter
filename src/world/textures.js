@@ -108,13 +108,14 @@ export function asphaltTextures() {
   return res;
 }
 
-export function kerbTexture() {
-  if (cache.has('kerb')) return cache.get('kerb');
+export function kerbTexture(a = '#d4202a', b = '#f2f2ee') {
+  const key = `kerb${a}${b}`;
+  if (cache.has(key)) return cache.get(key);
   const W = 256, H = 64;
   const c = canvas(W, H);
   const ctx = c.getContext('2d');
   for (let i = 0; i < 2; i++) {
-    ctx.fillStyle = i ? '#f2f2ee' : '#d4202a';
+    ctx.fillStyle = i ? b : a;
     ctx.fillRect(i * W / 2, 0, W / 2, H);
   }
   // darker grooves & grime
@@ -126,7 +127,7 @@ export function kerbTexture() {
   ctx.fillStyle = 'rgba(0,0,0,0.25)';
   ctx.fillRect(0, H - 6, W, 6);
   const t = toTex(c);
-  cache.set('kerb', t);
+  cache.set(key, t);
   return t;
 }
 

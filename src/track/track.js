@@ -2,13 +2,14 @@
 // Everything here is pure data so the physics, the AI, the lap simulator
 // (Node) and the renderer all agree on exactly the same surface.
 import { clamp, lerp, smoothstep, makeNoise2D, TAU, rng } from '../core/math.js';
+import { envOf } from './environments.js';
 import { catmullRomClosed, resamplePolyline, findCrossings, enforceMinRadius, signedArea } from './spline.js';
 
 export const KERB_W = 1.5;
 export const RUNOFF = 15;
-export const SURF = { ASPHALT: 0, KERB: 1, GRASS: 2, GRAVEL: 3 };
-export const SURF_GRIP = [1.0, 0.92, 0.62, 0.5];
-export const SURF_DRAG = [0, 0.004, 0.035, 0.11]; // rolling resistance coefficient added
+export const SURF = { ASPHALT: 0, KERB: 1, GRASS: 2, GRAVEL: 3, DIRT: 4 };
+export const SURF_GRIP = [1.0, 0.92, 0.62, 0.5, 0.8];
+export const SURF_DRAG = [0, 0.004, 0.035, 0.11, 0.012]; // rolling resistance coefficient added
 
 /**
  * def = { name, points:[[x,z]...], width, hills (0..1), banking (0..1), seed, theme }
@@ -26,6 +27,18 @@ export function buildTrack(def) {
   const DS = 2;
   let pts = resamplePolyline(dense, DS, true);
   let N = pts.length;
+  // arc-length position of each control point (for per-point edits)
+  const ctrlS = [];
+  {
+    let acc = 0;
+    for (let k = 0; k < dense.length; k++) {
+      if (k % 32 === 0) ctrlS.push(acc);
+      const a = dense[k], b = dense[(k + 1) % dense.length];
+      acc += Math.hypot(b[0] - a[0], b[1] - a[1]);
+    }
+    const scale = (N * DS) / acc;
+    for (let k = 0; k < ctrlS.length; k++) ctrlS[k] *= scale;
+  }
 
   // ----- tangents, normals, curvature (sign: + = left turn)
   const tx = new Float32Array(N), tz = new Float32Array(N), nx = new Float32Array(N), nz = new Float32Array(N);
@@ -62,7 +75,17 @@ export function buildTrack(def) {
       if (run > best.len && run <= N) best = { len: run, end: i };
     }
   }
-  const startIdx = (best.end - Math.floor(best.len * 0.45) + N) % N;
+  let startIdx = (best.end - Math.floor(best.len * 0.45) + N) % N;
+  if (def.start) {
+    // user-placed start/finish line: nearest centreline sample
+    let bd = Infinity;
+    for (let i = 0; i < N; i++) {
+      const d = (pts[i][0] - def.start[0]) ** 2 + (pts[i][1] - def.start[1]) ** 2;
+      if (d < bd) { bd = d; startIdx = i; }
+    }
+  }
+  // control-point sample indices in the rotated frame
+  const ctrlIdx = ctrlS.map((sv) => (Math.round(sv / DS) - startIdx + N * 2) % N);
   pts = rotate(pts, startIdx);
   tangentsFrom(pts);
   computeCurv();
@@ -106,6 +129,23 @@ export function buildTrack(def) {
     }
   }
 
+  // ----- per-point elevation offsets (Studio): smooth cosine blend between
+  // neighbouring control points, so a raised point makes a natural crest
+  const nC = ctrlIdx.length;
+  const offs = def.points.map((p) => +p[2] || 0);
+  if (offs.some((v) => v)) {
+    for (let c = 0; c < nC; c++) {
+      const a = ctrlIdx[c], b = ctrlIdx[(c + 1) % nC];
+      const span = (b - a + N) % N || N;
+      const ya = offs[c], yb = offs[(c + 1) % nC];
+      if (!ya && !yb) continue;
+      for (let k = 0; k < span; k++) {
+        const t = k / span;
+        y[(a + k) % N] += lerp(ya, yb, (1 - Math.cos(Math.PI * t)) / 2);
+      }
+    }
+  }
+
   // ----- flyovers for self-crossings
   const coarseStep = 4;
   const coarse = [];
@@ -141,6 +181,21 @@ export function buildTrack(def) {
   const maxBank = 0.15 * banking;
   for (let i = 0; i < N; i++) bank[i] = -clamp(curv[i] * 38, -1, 1) * maxBank;
   bank = smoothArr(bank, 10);
+  // per-point banking overrides (degrees; positive tilts the road into the
+  // corner at that point, negative is adverse camber)
+  def.points.forEach((p, c) => {
+    if (p[3] == null || p[3] === '') return;
+    const ci = ctrlIdx[c];
+    let cs = 0;
+    for (let k = -15; k <= 15; k++) cs += curv[(ci + k + N) % N];
+    const target = (-(Math.sign(cs) || 1) * (+p[3]) * Math.PI) / 180;
+    const R2 = 22; // samples (~44 m) either side
+    for (let k = -R2 * 2; k <= R2 * 2; k++) {
+      const i = (ci + k + N) % N;
+      const w = Math.exp(-(k * k) / (2 * R2 * R2 * 0.35));
+      bank[i] = lerp(bank[i], target, w);
+    }
+  });
 
   // ----- grade
   const grade = new Float32Array(N);
@@ -210,6 +265,9 @@ export function buildTrack(def) {
     px, py: y, pz, tx, tz, nx, nz, curv, bank, grade, s: sArr,
     kerb, gravelL, gravelR, runL: runLs, runR: runRs, wallL, wallR, deck,
     crossings,
+    ctrlIdx,
+    env: def.env || 'gp',
+    ...surfacesFor(def.env),
     bounds: { minX, maxX, minZ, maxZ, minY, maxY },
     clockwise: signedArea(pts) > 0,
     grid,
@@ -221,6 +279,17 @@ export function buildTrack(def) {
   track.heightfield = null; // built lazily (renderer/physics)
   track.corners = detectCorners(track);
   return track;
+}
+
+const SURF_BY_NAME = { grass: SURF.GRASS, asphalt: SURF.ASPHALT, sand: SURF.GRAVEL, gravel: SURF.GRAVEL, dirt: SURF.DIRT };
+/** Physics surfaces for an environment (road, run-off, traps). */
+export function surfacesFor(env) {
+  const E = envOf(env);
+  return {
+    surfRoad: E.road === 'gravel' ? SURF.DIRT : SURF.ASPHALT,
+    surfRunoff: SURF_BY_NAME[E.runoff] ?? SURF.GRASS,
+    surfTrap: SURF_BY_NAME[E.trap] ?? SURF.GRAVEL,
+  };
 }
 
 function avgAround(arr, i, r) {
@@ -348,7 +417,7 @@ export function queryTrack(T, x, z, hint = -1) {
   if (ad <= edge) {
     h = cy + d * tb;
     slopeLat = tb;
-    surface = ad <= T.half ? SURF.ASPHALT : T.kerb[i] ? SURF.KERB : SURF.GRASS;
+    surface = ad <= T.half ? T.surfRoad : T.kerb[i] && T.surfRoad === SURF.ASPHALT ? SURF.KERB : T.surfRunoff;
   } else {
     const he = cy + Math.sign(d) * edge * tb;
     // runoff droops gently toward the terrain beyond the wall line
@@ -356,7 +425,7 @@ export function queryTrack(T, x, z, hint = -1) {
     h = he - 0.06 * Math.min(ad - edge, 4) / 4 - t * 0.35;
     slopeLat = 0;
     const gravel = d >= 0 ? T.gravelL[i] : T.gravelR[i];
-    surface = gravel && ad > edge + 2 ? SURF.GRAVEL : SURF.GRASS;
+    surface = gravel && ad > edge + 2 ? T.surfTrap : T.surfRunoff;
     if (ad > wallDist + 3 && T.heightfield) {
       h = sampleHeightfield(T.heightfield, x, z);
     }

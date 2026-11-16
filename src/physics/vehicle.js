@@ -439,10 +439,11 @@ export class Vehicle {
   surfaceAt(q, d) {
     const T = this.track;
     const ad = Math.abs(d);
-    if (ad <= T.half) return SURF.ASPHALT;
-    if (ad <= T.half + 1.5) return q.kerb ? SURF.KERB : SURF.GRASS;
+    const road = T.surfRoad ?? SURF.ASPHALT, run = T.surfRunoff ?? SURF.GRASS;
+    if (ad <= T.half) return road;
+    if (ad <= T.half + 1.5) return q.kerb && road === SURF.ASPHALT ? SURF.KERB : run;
     const gravel = d >= 0 ? T.gravelL[q.i] : T.gravelR[q.i];
-    return gravel && ad > T.half + 3.5 ? SURF.GRAVEL : SURF.GRASS;
+    return gravel && ad > T.half + 3.5 ? (T.surfTrap ?? SURF.GRAVEL) : run;
   }
 
   tempGrip(t) {
