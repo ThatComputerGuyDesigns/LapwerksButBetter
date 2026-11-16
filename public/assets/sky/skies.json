@@ -1,0 +1,38 @@
+{
+ "midday": {
+  "file": "kloofendal_48d_partly_cloudy_puresky",
+  "sunElevation": 47.99,
+  "sunAzimuthU": 0.5952,
+  "horizon": [
+   0.4391,
+   0.4823,
+   0.6014
+  ],
+  "peak": 60449.8,
+  "median": 0.2152
+ },
+ "golden": {
+  "file": "kloppenheim_06_puresky",
+  "sunElevation": 4.75,
+  "sunAzimuthU": 0.6128,
+  "horizon": [
+   1.0676,
+   0.9521,
+   0.8782
+  ],
+  "peak": 19.6,
+  "median": 0.4165
+ },
+ "dusk": {
+  "file": "belfast_sunset_puresky",
+  "sunElevation": 1.93,
+  "sunAzimuthU": 0.605,
+  "horizon": [
+   3.688,
+   2.4523,
+   1.6908
+  ],
+  "peak": 24.5,
+  "median": 0.6874
+ }
+}

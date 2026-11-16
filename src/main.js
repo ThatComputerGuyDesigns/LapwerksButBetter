@@ -1235,6 +1235,7 @@ class App {
 
 const app = new App();
 window.kerbstone = app;
+window.kerbstoneDebug = { carShot };
 app.start().catch((err) => {
   console.error(err);
   $('.loader-text').textContent = 'Something went wrong starting Kerbstone: ' + err.message;

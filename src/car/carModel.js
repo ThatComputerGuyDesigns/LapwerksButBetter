@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { BODIES } from '../physics/carSetup.js';
 import { liveryTexture } from '../world/textures.js';
 import { createFormula } from './formulaModel.js';
+import { createCar2 } from './carModel2.js';
 import { batchStatic } from '../world/batch.js';
 import { clamp, lerp, smoothstep } from '../core/math.js';
 
@@ -89,6 +90,7 @@ const spow = (v, e) => Math.sign(v) * Math.pow(Math.abs(v), e);
 export function createCar(setup) {
   const B = BODIES[setup.body] || BODIES.gt;
   if (B.model === 'formula') return createFormula(setup, B);
+  if (setup.modelV2) return createCar2(setup); // design-language v2 (in development)
   const P = PROFILES[B.model] || PROFILES.gt;
   const a = B.wheelbase * (1 - B.weightFront); // CG → front axle
   const b = B.wheelbase * B.weightFront; // CG → rear axle

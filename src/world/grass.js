@@ -66,7 +66,7 @@ export function buildGrass(T, sampleHeight, { density = 1 } = {}) {
     }
   }
   const geo = tuftGeometry();
-  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.9, metalness: 0 });
   const uniforms = { time: { value: 0 } };
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.time = uniforms.time;

@@ -6,6 +6,7 @@ import { KERB_W, RUNOFF } from '../track/track.js';
 import { clamp, lerp, smoothstep, rng } from '../core/math.js';
 import * as TX from './textures.js';
 import { envOf } from '../track/environments.js';
+import { pbr } from './realtex.js';
 
 const up = new THREE.Vector3(0, 1, 0);
 
@@ -90,6 +91,13 @@ export function buildTrackScene(T, line) {
     map: asphalt.map, roughnessMap: asphalt.roughnessMap, normalMap: asphalt.normalMap,
     normalScale: new THREE.Vector2(0.6, 0.6), roughness: 1, metalness: 0, vertexColors: true,
   });
+  // photo-scanned asphalt (falls back to the procedural maps until loaded)
+  {
+    const a = pbr('asphalt');
+    const rep = (t) => { const c = t.clone(); c.repeat.set(1, 2); c.needsUpdate = true; return c; };
+    roadMat.map = rep(a.map); roadMat.normalMap = rep(a.normalMap); roadMat.roughnessMap = rep(a.orm);
+    roadMat.normalScale = new THREE.Vector2(0.8, 0.8);
+  }
   if (E.road === 'gravel') { const gt = TX.gravelTextures(); roadMat.map = gt.map; roadMat.normalMap = gt.normalMap; roadMat.roughnessMap = null; roadMat.color.set(0xb8a68a); }
   if (COL.road) roadMat.color.set(COL.road);
   {
@@ -147,6 +155,11 @@ export function buildTrackScene(T, line) {
   const runoffTex = TX.runoffGrassTexture();
   // tinted to match the terrain's vertex-coloured grass so there is no seam
   const runoffMat = new THREE.MeshStandardMaterial({ map: runoffTex, normalMap: grassT.normalMap, roughness: 0.97, metalness: 0, envMapIntensity: 0.5, color: new THREE.Color(0xd2dc98).multiply(new THREE.Color(...E.ground)) });
+  {
+    const gr = pbr('grass');
+    const rep = (t) => { const c = t.clone(); c.repeat.set(5, 5); c.needsUpdate = true; return c; };
+    runoffMat.map = rep(gr.map); runoffMat.normalMap = rep(gr.normalMap); runoffMat.color.set(0xffffff).multiply(new THREE.Color(...E.ground));
+  }
   if (E.runoff === 'asphalt') { runoffMat.map = asphalt.map; runoffMat.normalMap = asphalt.normalMap; runoffMat.color.set(0x9a9c9e); runoffMat.roughness = 0.9; }
   else if (E.runoff === 'sand' || E.runoff === 'dirt') { const gt = TX.gravelTextures(); runoffMat.map = gt.map; runoffMat.normalMap = gt.normalMap; runoffMat.color.set(E.runoff === 'sand' ? 0xf0d6a0 : 0xa08060); }
   for (const side of [1, -1]) {
@@ -168,7 +181,8 @@ export function buildTrackScene(T, line) {
   // ---------------- gravel traps
   const gravelT = TX.gravelTextures();
   const gravelMat = new THREE.MeshStandardMaterial({ map: gravelT.map, normalMap: gravelT.normalMap, roughness: 1, metalness: 0 });
-  if (E.trap === 'sand') gravelMat.color.set(0xf4d9a2);
+  { const gv = pbr(E.trap === 'sand' ? 'sand' : 'gravel'); gravelMat.map = gv.map; gravelMat.normalMap = gv.normalMap; gravelMat.color.set(0xd8d4cc); }
+  if (E.trap === 'sand') gravelMat.color.set(0xffffff);
   else if (E.trap === 'dirt') gravelMat.color.set(0xa08060);
   else if (E.trap === 'asphalt') { gravelMat.map = asphalt.map; gravelMat.normalMap = asphalt.normalMap; gravelMat.color.set(0x8e9092); }
   const skipTraps = E.trap === 'grass';

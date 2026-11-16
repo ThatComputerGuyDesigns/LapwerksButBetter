@@ -13,6 +13,8 @@ import { radialTexture } from './textures.js';
 import { rng, smoothstep, clamp } from '../core/math.js';
 import * as TX from './textures.js';
 import { envOf } from '../track/environments.js';
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
+import { setAniso, terrainMaterial } from './realtex.js';
 
 export const THEMES = {
   golden: { name: 'Golden Hour', elevation: 21, azimuth: 235, turbidity: 4.5, rayleigh: 1.8, mie: 0.0025, sun: 0xffdcb4, sunI: 2.7, hemiSky: 0xbcd3ff, hemiGround: 0x5a4a32, hemiI: 0.6, fog: 0xb9b3aa, exposure: 0.5, envI: 0.9, clouds: 0.5 },
@@ -31,6 +33,7 @@ export class World {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
     TX.setMaxAnisotropy(Math.min(8, renderer.capabilities.getMaxAnisotropy()));
+    setAniso(Math.min(8, renderer.capabilities.getMaxAnisotropy()));
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(60, 1, 0.1, 6000);
@@ -127,6 +130,8 @@ export class World {
   }
 
   setTheme(key) {
+    this.sky.visible = true; this.clouds.visible = true;
+    if (!this.hdrCache?.[key]) this.scene.background = null;
     const t = (this.theme = THEMES[key] || THEMES.golden);
     this.themeKey = key in THEMES ? key : 'golden';
     const u = this.sky.material.uniforms;
@@ -165,6 +170,54 @@ export class World {
     this.envRT = this.pmrem.fromScene(envScene, 0.02);
     this.scene.environment = this.envRT.texture;
     this.scene.environmentIntensity = t.envI;
+    this.loadHDRSky(this.themeKey);
+  }
+
+  /**
+   * Photographed sky (CC0 HDRI): visible backdrop + image-based lighting.
+   * The sun light is placed where the sun is in the photo so shadows match.
+   */
+  async loadHDRSky(key) {
+    const token = (this.skyToken = (this.skyToken || 0) + 1);
+    const base = import.meta.env?.BASE_URL || './';
+    try {
+      this.skyMeta ||= await (await fetch(base + 'assets/sky/skies.json')).json();
+      const meta = this.skyMeta[key];
+      if (!meta) return;
+      this.hdrCache ||= {};
+      const tex = this.hdrCache[key] || (this.hdrCache[key] = await new RGBELoader().loadAsync(base + `assets/sky/${key}.hdr`));
+      if (token !== this.skyToken) return;
+      tex.mapping = THREE.EquirectangularReflectionMapping;
+      // exposure: put the sky's median brightness at a pleasant mid-grey
+      const look = { midday: 0.2, golden: 0.2, dusk: 0.17 }[key] ?? 0.2;
+      const exposure = look / meta.median;
+      this.renderer.toneMappingExposure = exposure;
+      this.scene.background = tex;
+      this.scene.backgroundIntensity = 1;
+      this.scene.backgroundBlurriness = 0;
+      if (this.hdrEnv) this.hdrEnv.dispose();
+      this.hdrEnv = this.pmrem.fromEquirectangular(tex);
+      this.scene.environment = this.hdrEnv.texture;
+      this.scene.environmentIntensity = 1;
+      this.sky.visible = false;
+      this.clouds.visible = false;
+      // sun direction from the brightest point of the photo (three.js equirect mapping)
+      const phi = (meta.sunAzimuthU - 0.5) * Math.PI * 2;
+      const el = THREE.MathUtils.degToRad(Math.max(meta.sunElevation, 6));
+      this.sunDir.set(Math.cos(phi) * Math.cos(el), Math.sin(el), Math.sin(phi) * Math.cos(el)).normalize();
+      // direct sun strength relative to the sky (low suns are weaker and warmer)
+      const t = this.theme;
+      this.sun.color.set(t.sun);
+      this.sun.intensity = ({ midday: 5.2, golden: 3.4, dusk: 2.6 }[key] ?? 4) / exposure * 0.2;
+      this.hemi.intensity = 0.25;
+      const h = meta.horizon;
+      // fog in the same linear radiance as the horizon, so distant land melts into the sky
+      const fog = new THREE.Color(h[0], h[1], h[2]).multiplyScalar(0.92);
+      this.scene.fog = new THREE.FogExp2(fog, this.fogDensity ?? 0.00012);
+      this.hdrActive = key;
+    } catch (err) {
+      console.warn('HDR sky unavailable, using the procedural sky', err);
+    }
   }
 
   /** Keep the shadow frustum centred on the action. */
@@ -242,34 +295,10 @@ export function buildTerrain(T) {
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   geo.setIndex(idx);
   geo.computeVertexNormals();
-  const g = TX.grassTextures();
-  const mat = new THREE.MeshStandardMaterial({ map: g.map, normalMap: g.normalMap, vertexColors: true, roughness: 0.97, metalness: 0, envMapIntensity: 0.5 });
-  // slope-aware material: grass on the flats, earthy banks, exposed rock on
-  // steep faces (procedural, no extra textures)
-  mat.onBeforeCompile = (sh) => {
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vSlope; varying vec3 vWPos;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSlope = 1.0 - normalize(mat3(modelMatrix) * normal).y; vWPos = (modelMatrix * vec4(position, 1.0)).xyz;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-      varying float vSlope; varying vec3 vWPos;
-      float th(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
-      float tn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(th(i), th(i+vec2(1,0)), f.x), mix(th(i+vec2(0,1)), th(i+vec2(1,1)), f.x), f.y); }`)
-      .replace('#include <map_fragment>', `#include <map_fragment>
-      float rn = tn(vWPos.xz * 0.35) * 0.6 + tn(vWPos.xz * 1.7) * 0.4;
-      vec3 dirt = vec3(${E.dirt.map((v) => v.toFixed(3)).join(', ')}) * (0.8 + rn * 0.4);
-      vec3 rockc = vec3(0.42, 0.41, 0.4) * (0.7 + rn * 0.5);
-      float sl = vSlope + (rn - 0.5) * 0.08;
-      // art-directed lawn: keep the texture's detail but set the hue ourselves
-      // (olive/summer green with dry patches) so sky light can't turn it mint
-      float tl = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
-      float patchN = tn(vWPos.xz * 0.012) * 0.65 + tn(vWPos.xz * 0.05) * 0.35;
-      vec3 lawnA = vec3(0.085, 0.15, 0.04), lawnB = vec3(0.15, 0.175, 0.055);
-      vec3 lawn = mix(lawnA, lawnB, smoothstep(0.4, 0.85, patchN)) * (0.36 + tl * 1.5);
-      diffuseColor.rgb = mix(diffuseColor.rgb, lawn, ${E.sand ? '0.0' : '0.85'});
-      ${E.sand ? `diffuseColor.rgb = vec3(${E.sand.map((v) => v.toFixed(3)).join(', ')}) * (0.82 + rn * 0.3);` : ''}
-      diffuseColor.rgb = mix(diffuseColor.rgb, dirt, smoothstep(0.1, 0.2, sl) * 0.75);
-      diffuseColor.rgb = mix(diffuseColor.rgb, rockc, smoothstep(0.22, 0.34, sl));`);
-  };
-  mat.customProgramCacheKey = () => `terrain-${T.env}`; // shader text depends on the environment
+  // photo-scanned splat material: vertex colour R = dirt weight
+  for (let k = 0; k < nx * nz; k++) { col[k * 3] = E.road === 'gravel' ? 0.35 : 0; col[k * 3 + 1] = 0; col[k * 3 + 2] = 0; }
+  geo.attributes.color.needsUpdate = true;
+  const mat = terrainMaterial({ sandTint: E.sand ? 1 : null, grassTint: E.ground, snowLevel: T.meanY + 220 });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true;
   mesh.name = 'terrain';
