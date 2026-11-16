@@ -7,8 +7,9 @@ import { coniferGeometry, broadleafGeometry, palmGeometry } from '../world/envir
 import { batchStatic } from '../world/batch.js';
 import { sampleGrid, cellOf, SEA, HALF, CELL, NCELL, S_WATER, S_SAND } from './worldgen.js';
 import { rng, clamp, smoothstep, makeNoise2D } from '../core/math.js';
+import { Batcher, placeBuilding, bakeFacade } from './kit.js';
 
-export function buildOpenWorld(W) {
+export function buildOpenWorld(W, kit = null, renderer = null) {
   const root = new THREE.Group();
   root.name = 'openworld';
   const R = rng(W.seed * 31 + 7);
@@ -190,7 +191,7 @@ export function buildOpenWorld(W) {
   }
 
   // ------------------------------------------------------------ town, festival, airfield, landmarks
-  root.add(buildTown(W, R, hAt));
+  root.add(kit && renderer ? buildTownKit(W, R, hAt, kit, renderer) : buildTown(W, R, hAt));
   const fest = buildFestival(W, R, hAt);
   root.add(fest.group);
   updaters.push(fest.update);
@@ -213,14 +214,16 @@ export function buildOpenWorld(W) {
 
 /** A disc of dense grass tufts re-seeded around the camera as it moves. */
 function buildGrassPatch(W, hAt) {
-  const COUNT = 14000, RAD = 62, STEP = 1.0;
-  // tuft: three crossed tapered blades, dark at the root → bright tip
+  const COUNT = 26000, RAD = 48, STEP = 0.55;
+  // tuft: seven thin blades fanning out, dark at the root → sunlit tip
   const pos = [], col = [], idx = [];
-  for (let b = 0; b < 3; b++) {
-    const a = (b / 3) * Math.PI, ca = Math.cos(a), sa = Math.sin(a), v0 = pos.length / 3;
-    const pts = [[-0.34, 0], [0.34, 0], [-0.2, 0.34], [0.2, 0.34], [0.02, 0.72]];
-    for (const [x, y] of pts) { pos.push(ca * x + sa * y * 0.25, y, sa * x - ca * y * 0.25); const t = y / 0.72; col.push(0.1 + t * 0.26, 0.19 + t * 0.34, 0.04 + t * 0.1); }
-    idx.push(v0, v0 + 1, v0 + 2, v0 + 1, v0 + 3, v0 + 2, v0 + 2, v0 + 3, v0 + 4);
+  for (let b = 0; b < 7; b++) {
+    const a = (b / 7) * Math.PI * 2 + b, ca = Math.cos(a), sa = Math.sin(a), v0 = pos.length / 3;
+    const lean = 0.08 + (b % 3) * 0.05, h = 0.32 + (b % 4) * 0.07, w = 0.025;
+    const ox = ca * 0.06, oz = sa * 0.06;
+    const pts = [[-w, 0, 0], [w, 0, 0], [0, h, lean]];
+    for (const [x, y, l] of pts) { pos.push(ox + ca * l * (y / h) - sa * x, y, oz + sa * l * (y / h) + ca * x); const t = y / h; col.push(0.07 + t * 0.2, 0.13 + t * 0.26, 0.03 + t * 0.07); }
+    idx.push(v0, v0 + 1, v0 + 2);
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -256,9 +259,12 @@ function buildGrassPatch(W, hAt) {
       if ((x - cx) ** 2 + (z - cz) ** 2 > RAD * RAD) continue;
       const c = cellOf(x, z);
       if (W.surf[c] !== 2) continue;
+      const Lm = W.landmarks;
+      if (Math.abs(x - Lm.town[0]) < 320 && Math.abs(z - Lm.town[1]) < 290) continue;
+      if (Math.hypot(x - Lm.festival[0], z - Lm.festival[1]) < 152) continue;
       const r = W.roadOf[c] >= 0 ? W.roads[W.roadOf[c]] : null;
       if (r && W.dist[c] < r.width / 2 + 1.2) continue;
-      const s = 0.7 + h1 * 1.1;
+      const s = 0.8 + h1 * 0.7;
       q.setFromAxisAngle(Y, h1 * 40);
       m4.compose(v.set(x, hAt(x, z) - 0.03, z), q, sc.set(s, s * (0.7 + hash(X + 5, Z + 9) * 0.9), s));
       mesh.setMatrixAt(k++, m4);
@@ -530,6 +536,118 @@ function buildTown(W, R, hAt) {
     }
   }
   batchStatic(g);
+  return g;
+}
+
+/**
+ * Town from the scanned facade kit: every building is a box wrapped in a
+ * facade texture baked from the real kit, and along Main Street and Fourth
+ * Avenue the ground floors are the full 3D kit (doors, shopfronts, depth).
+ */
+function buildTownKit(W, R, hAt, kit, renderer) {
+  const g = new THREE.Group();
+  const T0 = W.landmarks.town;
+  const y0 = W.townH;
+  // pavement
+  {
+    const pave = pbrMaterial('asphalt', { color: 0xb8b4ac });
+    for (const k of ['map', 'normalMap', 'roughnessMap']) { pave[k] = pave[k].clone(); pave[k].repeat.set(90, 80); pave[k].needsUpdate = true; }
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(620, 560), pave);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.set(T0[0], y0 + 0.03, T0[1]);
+    ground.receiveShadow = true;
+    g.add(ground);
+  }
+  // baked facade variants (window style × plaster tint)
+  const styles = [
+    ['wall_window_centered_large_01', 'window_centered_large_01'],
+    ['wall_window_centered_double_01', 'window_centered_double_01'],
+    ['wall_window_centered_small_01', 'window_centered_small_01'],
+    ['wall_window_offset_small_01', 'window_offset_small_01'],
+  ];
+  const tints = [0xffffff, 0xe2e9ff, 0xfff2dc, 0xcfdbe4, 0xf4e6d2, 0xdcd4cc];
+  const facades = [];
+  for (let k = 0; k < 6; k++) {
+    const st = styles[k % styles.length];
+    const map = bakeFacade(renderer, kit, { wall: st[0], win: st[1], tint: tints[k] });
+    facades.push({ mat: new THREE.MeshStandardMaterial({ map, roughness: 0.82, metalness: 0.0 }), tint: new THREE.Color(tints[k]), style: st });
+  }
+  const roofMat = pbrMaterial('asphalt', { color: 0x6b6d70 });
+  const parapetMat = new THREE.MeshStandardMaterial({ color: 0xd8d2c8, roughness: 0.8 });
+  const B = new Batcher(kit);
+  const FLOOR = 3.5;
+  const mainZ = T0[1], mainX = T0[0]; // Main Street (z) and Fourth Avenue (x)
+  for (let i = -3; i < 3; i++) for (let j = -3; j < 3; j++) {
+    const bx = T0[0] + (i + 0.5) * 95, bz = T0[1] + (j + 0.5) * 85;
+    for (let k = 0; k < 4; k++) {
+      const sx = k % 2 ? 1 : -1, sz = k < 2 ? 1 : -1;
+      const wb = 11 + Math.floor(R() * 2), db = 9 + Math.floor(R() * 2);
+      const cx = bx + sx * 19.5, cz = bz + sz * 17;
+      const centre = Math.hypot(i + 0.5, j + 0.5);
+      const floors = Math.max(2, Math.round(3 + R() * 3 + (centre < 1.6 ? 3 + R() * 3 : 0)));
+      const F = facades[Math.floor(R() * facades.length)];
+      const W3 = wb * 3, D3 = db * 3;
+      // which faces sit on Main Street / Fourth Avenue? side index: 0 +z, 1 +x, 2 -z, 3 -x
+      const onMain = [];
+      if (Math.abs(cz + D3 / 2 - mainZ) < 14) onMain.push(0);
+      if (Math.abs(cz - D3 / 2 - mainZ) < 14) onMain.push(2);
+      if (Math.abs(cx + W3 / 2 - mainX) < 14) onMain.push(1);
+      if (Math.abs(cx - W3 / 2 - mainX) < 14) onMain.push(3);
+      const kitGround = onMain.length > 0 && Math.abs(i + 0.5) < 2.6 && Math.abs(j + 0.5) < 2.6;
+      // body: baked facade all the way down; real kit storefronts sit just in front on Main Street
+      const top = (floors - 1) * FLOOR + 3;
+      const yb = 0;
+      const h = top - yb;
+      const geo = new THREE.BoxGeometry(W3, h, D3);
+      const uv = geo.attributes.uv, pA = geo.attributes.position, nA = geo.attributes.normal;
+      for (let v = 0; v < uv.count; v++) {
+        const along = Math.abs(nA.getX(v)) > 0.5 ? -pA.getZ(v) * Math.sign(nA.getX(v)) : pA.getX(v) * Math.sign(nA.getZ(v) || 1);
+        uv.setXY(v, (along + W3) / 12, (pA.getY(v) + h / 2 + yb) / 7);
+      }
+      const body = new THREE.Mesh(geo, [F.mat, F.mat, roofMat, roofMat, F.mat, F.mat]);
+      body.position.set(cx, y0 + yb + h / 2, cz);
+      body.castShadow = true; body.receiveShadow = true;
+      g.add(body);
+      // parapet / cornice band
+      const par = new THREE.Mesh(new THREE.BoxGeometry(W3 + 0.5, 0.9, D3 + 0.5), parapetMat);
+      par.position.set(cx, y0 + top + 0.45, cz);
+      par.castShadow = true;
+      g.add(par);
+      if (kitGround) {
+        placeBuilding(B, { x: cx, z: cz, y: y0, rot: 0, wb, db, floors: 1, tint: F.tint, R, shop: R() < 0.7, only: onMain, cap: false, inset: 0.06 });
+      }
+      // rooftop plant
+      if (R() < 0.8) {
+        const u = new THREE.Mesh(new THREE.BoxGeometry(3 + R() * 5, 1.6 + R() * 1.6, 3 + R() * 5), parapetMat);
+        u.position.set(cx + (R() - 0.5) * W3 * 0.5, y0 + top + 1.4, cz + (R() - 0.5) * D3 * 0.5);
+        u.castShadow = true;
+        g.add(u);
+      }
+      // fire escapes on the taller side streets
+      if (!kitGround && floors >= 4 && R() < 0.35) {
+        const xs = cx + sx * (W3 / 2 + 0.75);
+        for (let f = 1; f < floors; f++) {
+          const m = new THREE.Matrix4().makeRotationY(sx > 0 ? -Math.PI / 2 : Math.PI / 2).setPosition(xs, y0 + f * FLOOR - 0.1, cz);
+          B.add('modular_fire_escape_platform_middle', m);
+          B.add('modular_fire_escape_railing_middle', m.clone());
+          if (f < floors - 1) B.add('modular_fire_escape_stairs', m.clone());
+        }
+      }
+    }
+  }
+  // bins along Main Street and Fourth Avenue
+  for (const r of W.roads.filter((q) => q.id === 'tx0' || q.id === 'tz0')) {
+    for (let i = 5; i < r.pts.length - 1; i += 9) {
+      const [x, z] = r.pts[i], [x2, z2] = r.pts[i + 1];
+      const tx = x2 - x, tz = z2 - z, l = Math.hypot(tx, tz) || 1;
+      const nx = tz / l, nz = -tx / l;
+      const sd = i % 18 < 9 ? 1 : -1;
+      const px = x + nx * (r.width / 2 + 1.6) * sd, pz = z + nz * (r.width / 2 + 1.6) * sd;
+      const m = new THREE.Matrix4().makeRotationY(R() * 6.28).setPosition(px, y0 + 0.03, pz);
+      B.add('metal_trash_can', m); B.add('metal_trash_can_lid', m.clone());
+    }
+  }
+  g.add(B.build());
   return g;
 }
 

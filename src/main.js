@@ -33,6 +33,7 @@ import { generateWorld } from './open/worldgen.js';
 import { buildOpenWorld } from './open/worldMesh.js';
 import { OpenSession } from './open/openSession.js';
 import { OpenHUD } from './open/openHud.js';
+import { loadKits, bakeFacade } from './open/kit.js';
 import { dailyChallenge, dayKey, endlessRound, newEndless, newChampionship, recordRound, standings as champStandings, SERIES, POINTS } from './game/challenges.js';
 import { randomTrack } from './track/generator.js';
 
@@ -314,7 +315,9 @@ class App {
     this.world.grade.uniforms.contrast.value = 1.14;
     this.world.setTheme(this.settings.openTheme || 'midday');
     await new Promise((r) => setTimeout(r, 0));
-    this.openView = buildOpenWorld(this.openW);
+    $('.loader-text').textContent = 'Building the town…';
+    const kit = await loadKits().catch(() => null);
+    this.openView = buildOpenWorld(this.openW, kit, this.world.renderer);
     this.world.content.add(this.openView.group);
     if (this.openHud.W !== this.openW) this.openHud.setWorld(this.openW);
     setGripLevel(this.settings.grip);
@@ -1297,7 +1300,7 @@ class App {
 
 const app = new App();
 window.kerbstone = app;
-window.kerbstoneDebug = { carShot };
+window.kerbstoneDebug = { carShot, loadKits, bakeFacade };
 app.start().catch((err) => {
   console.error(err);
   $('.loader-text').textContent = 'Something went wrong starting Kerbstone: ' + err.message;
