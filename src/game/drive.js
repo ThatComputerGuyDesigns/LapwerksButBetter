@@ -65,7 +65,7 @@ export class DriveSession {
   }
 
   newLapState() {
-    return { start: null, t: 0, invalid: false, sectorTimes: [], splits: new Float32Array(this.T.N).fill(NaN), ghost: [], lastS: 0, sector: 0 };
+    return { start: null, t: 0, invalid: false, sectorTimes: [], splits: new Float32Array(this.T.N).fill(NaN), ghost: [], tele: [], lastS: 0, sector: 0 };
   }
 
   resetToGrid() {
@@ -237,7 +237,7 @@ export class DriveSession {
     const L = this.lap;
     this.history.push({
       time: this.time, car: this.car.snapshot(), lapsDone: this.lapsDone, raceBest: this.raceBest, lastLap: this.lastLap,
-      lap: { ...L, sectorTimes: L.sectorTimes.slice(), splits: L.splits.slice(), ghostLen: L.ghost.length },
+      lap: { ...L, sectorTimes: L.sectorTimes.slice(), splits: L.splits.slice(), ghostLen: L.ghost.length, teleLen: L.tele.length },
       field: this.field ? this.field.cars.map((r) => ({ car: r.car.snapshot(), lapsDone: r.lapsDone, started: r.started, lastS: r.lastS, finished: r.finished, best: r.best, lapStart: r.lapStart, offset: r.offset, mistake: r.mistake })) : null,
     });
     if (this.history.length > 150) this.history.shift();
@@ -248,7 +248,7 @@ export class DriveSession {
     this.car.restore(h.car);
     this.lapsDone = h.lapsDone; this.raceBest = h.raceBest; this.lastLap = h.lastLap;
     const ghost = this.lap.ghost;
-    this.lap = { ...h.lap, sectorTimes: h.lap.sectorTimes.slice(), splits: h.lap.splits.slice(), ghost: h.lap.ghost === ghost ? ghost.slice(0, h.lap.ghostLen) : h.lap.ghost.slice(0, h.lap.ghostLen) };
+    this.lap = { ...h.lap, sectorTimes: h.lap.sectorTimes.slice(), splits: h.lap.splits.slice(), ghost: h.lap.ghost === ghost ? ghost.slice(0, h.lap.ghostLen) : h.lap.ghost.slice(0, h.lap.ghostLen), tele: h.lap.tele.slice(0, h.lap.teleLen) };
     if (h.field) h.field.forEach((f, k) => { const r = this.field.cars[k]; r.car.restore(f.car); Object.assign(r, { lapsDone: f.lapsDone, started: f.started, lastS: f.lastS, finished: f.finished, best: f.best, lapStart: f.lapStart, offset: f.offset, mistake: f.mistake }); });
   }
 
@@ -269,6 +269,12 @@ export class DriveSession {
     if (L.start != null) {
       L.ghostNext = L.ghostNext ?? 0;
       while (t >= L.ghostNext) { L.ghost.push(car.x, car.y, car.z, car.heading); L.ghostNext += 1 / 30; }
+      // telemetry for Coach (10 Hz): distance, time, speed, pedals, steer, gear, rpm, g, position
+      L.teleNext = L.teleNext ?? 0;
+      if (t >= L.teleNext) {
+        L.tele.push([Math.round(car.q.s), +t.toFixed(2), +(car.speed * 3.6).toFixed(1), +car.throttle.toFixed(2), +car.brake.toFixed(2), +car.steer.toFixed(3), car.gear, Math.round(car.rpm), +(car.ay / 9.81).toFixed(2), +(car.ax / 9.81).toFixed(2), Math.round(car.x * 10) / 10, Math.round(car.z * 10) / 10]);
+        L.teleNext += 0.1;
+      }
     }
     // sector crossings
     const sec = Math.floor((s / T.length) * 3);
@@ -318,6 +324,11 @@ export class DriveSession {
     }
     this.lastLap = { time: lapTime, valid };
     L.sectorTimes.push(lapTime);
+    // keep the session's laps for Coach; the best valid lap is stored per circuit
+    this.laps = this.laps || [];
+    this.laps.push({ n: this.laps.length + 1, time: lapTime, valid, sectors: L.sectorTimes.slice(0, 3), tele: L.tele, body: this.setup.body });
+    if (this.laps.length > 30) this.laps.shift();
+    if (valid) this.app.coachLap?.(this.trackKey, this.laps[this.laps.length - 1]);
     if (valid && (!this.best || lapTime < this.best.time)) {
       const ghost = this.recordGhost();
       this.best = { time: lapTime, sectors: L.sectorTimes.slice(0, 3), splits: Array.from(L.splits), ghost };

@@ -28,6 +28,7 @@ import { TrackEditor, drawThumb } from './ui/editor.js';
 import { Garage } from './ui/garage.js';
 import { formatTime, clamp } from './core/math.js';
 import { carShot } from './ui/renders.js';
+import { CoachUI } from './ui/coachUI.js';
 import { dailyChallenge, dayKey, endlessRound, newEndless, newChampionship, recordRound, standings as champStandings, SERIES, POINTS } from './game/challenges.js';
 import { randomTrack } from './track/generator.js';
 
@@ -53,6 +54,7 @@ class App {
     this.rcui = new RaceControlUI(this, $('#rc'));
     this.career = new Career(store);
     this.careerUI = new CareerUI(this, $('#career'));
+    this.coach = new CoachUI(this, $('#coach'));
     this.screen = 'loading';
     this.session = null;
     this.lastT = performance.now();
@@ -139,7 +141,7 @@ class App {
 
   hideAll() {
     this.veil();
-    for (const id of ['home', 'reveal', 'preview3d', 'hud', 'pause', 'settings', 'circuits', 'modes', 'results', 'rc', 'rcsetup', 'rcreport', 'career']) $('#' + id).hidden = true;
+    for (const id of ['home', 'coach', 'reveal', 'preview3d', 'hud', 'pause', 'settings', 'circuits', 'modes', 'results', 'rc', 'rcsetup', 'rcreport', 'career']) $('#' + id).hidden = true;
     setGripLevel(this.settings.grip); // race control runs on realistic grip; restore yours
     if (this.editor.active) this.editor.close();
     if (this.pv) this.closePreview3D();
@@ -149,6 +151,7 @@ class App {
   }
 
   showHome() {
+    this.keepSessionLaps();
     this.hideAll();
     this.challenge = null;
     this.restoreSetup();
@@ -280,6 +283,31 @@ class App {
     cam.far = 30000;
     cam.updateProjectionMatrix();
     this.world.followShadow(pv.look);
+  }
+
+  /** Keep the laps of the session that is ending, for Coach. */
+  keepSessionLaps() {
+    const s = this.session;
+    if (s?.mode === 'race' && s.laps?.length) { this.lastSessionLaps = s.laps; this.lastSessionTrack = this.trackDef?.name; }
+  }
+
+  openCoach(source) {
+    this.keepSessionLaps();
+    this.hideAll();
+    if (this.session) { this.session.dispose(); this.session = null; }
+    this.screen = 'coach';
+    this.coach.open(source || (this.lastSessionLaps?.length ? 'session' : 'saved'));
+  }
+
+  /** A valid lap finished: keep the best one per circuit for Coach. */
+  coachLap(trackKey, lap) {
+    const all = store.get('coachBest', {});
+    const cur = all[trackKey];
+    if (cur && cur.lap.time <= lap.time) return;
+    all[trackKey] = { track: this.trackDef?.name || 'Circuit', car: lap.body, lap: { time: lap.time, valid: true, n: 1, tele: lap.tele, sectors: lap.sectors } };
+    const keys = Object.keys(all);
+    if (keys.length > 20) delete all[keys[0]];
+    store.set('coachBest', all);
   }
 
   openGarage() {
@@ -951,6 +979,7 @@ class App {
       else if (go === 'career') this.openCareer();
       else if (go === 'studio') this.openStudio(null);
       else if (go === 'garage') this.openGarage();
+      else if (go === 'coach') this.openCoach();
       else this.openOverlay(go);
     });
     $('#preview3d').addEventListener('click', (e) => {
@@ -1011,6 +1040,7 @@ class App {
       if (!a) return;
       audio.click();
       $('#results').hidden = true;
+      if (a === 'coach') { this.openCoach('session'); return; }
       if (this.lastCareer && a !== 'menu') { this.openCareer(); return; }
       const c = this.challenge;
       if (c && a === 'again') {
@@ -1135,7 +1165,7 @@ class App {
 
   frame(dt) {
     const scr = this.screen;
-    if (scr === 'studio') return; // 2D editor draws itself
+    if (scr === 'studio' || scr === 'coach') return; // 2D screens draw themselves
     if (scr === 'garage') {
       this.garage.update(dt);
       this.world.renderPass.scene = this.garage.scene;

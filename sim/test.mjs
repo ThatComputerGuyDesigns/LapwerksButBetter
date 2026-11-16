@@ -199,5 +199,24 @@ for (const [a, min] of [['casual', 45], ['sport', 35], ['pro', 15]]) {
   check(fw.aero.balance > mk({ body: 'gt3' }).aero.balance, 'front wing moves aero balance forward');
 }
 
+// 9. Coach: GPS session → laps → the slower corner is found
+{
+  const { parseSession, lapsFromSession, compareLaps } = await import('../src/game/coach.js');
+  let gpx = '<gpx><trk><trkseg>', t = Date.parse('2026-06-01T10:00:00Z') / 1000;
+  const L1 = 400, R = 80, C = Math.PI * R, P = 2 * L1 + 2 * C;
+  const shape = (u) => { let s = u * P; if (s < L1) return [s - 200, -R]; s -= L1; if (s < C) { const a = -Math.PI / 2 + s / R; return [200 + Math.cos(a) * R, Math.sin(a) * R]; } s -= C; if (s < L1) return [200 - s, R]; s -= L1; const a = Math.PI / 2 + s / R; return [-200 + Math.cos(a) * R, Math.sin(a) * R]; };
+  for (let lap = 0; lap < 3; lap++) for (let k = 0; k < 600; k++) {
+    const u = k / 600, [x, z] = shape(u);
+    let v = (u > 0.27 && u < 0.5) || u > 0.77 ? 22 : 45;
+    if (lap === 1 && u > 0.75) v *= 0.85;
+    t += P / 600 / v;
+    gpx += `<trkpt lat="${52 - z / 110540}" lon="${-1 + x / (111320 * Math.cos((52 * Math.PI) / 180))}"><time>${new Date(t * 1000).toISOString()}</time></trkpt>`;
+  }
+  const laps = lapsFromSession(parseSession(gpx + '</trkseg></trk></gpx>'));
+  const G = compareLaps(laps[0], laps[1]);
+  const worst = G.corners.slice().sort((a, b) => b.delta - a.delta)[0];
+  check(laps.length === 2 && G.corners.length === 2 && worst.n === 2 && worst.delta > 1.5, `Coach: ${laps.length} laps from GPS, loss found at Turn ${worst.n} (${worst.delta.toFixed(2)} s)`);
+}
+
 console.log(failed ? `\n${failed} check(s) failed` : '\nall checks passed');
 process.exit(failed ? 1 : 0);

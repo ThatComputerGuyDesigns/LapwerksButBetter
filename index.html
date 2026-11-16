@@ -46,6 +46,7 @@
       <nav class="h-sub">
         <button data-go="garage"><svg viewBox="0 0 24 24"><path d="M3 15l2-5h14l2 5v4H3z" /><circle cx="7.5" cy="17.5" r="1.5" /><circle cx="16.5" cy="17.5" r="1.5" /></svg>Garage</button>
         <button data-go="circuits"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="7" rx="1.5" /><rect x="14" y="4" width="7" height="7" rx="1.5" /><rect x="3" y="13" width="7" height="7" rx="1.5" /><rect x="14" y="13" width="7" height="7" rx="1.5" /></svg>Circuits</button>
+        <button data-go="coach"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 4 8-9" /><path d="M14 6h6v6" /></svg>Coach</button>
         <button data-go="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1" /></svg>Settings</button>
         <span class="h-hint"><kbd>←</kbd><kbd>→</kbd> move · <kbd>Enter</kbd> select</span>
         <span class="home-foot">v<span class="ver"></span></span>
@@ -54,6 +55,8 @@
 
     <!-- track studio -->
     <section id="studio" class="screen" hidden></section>
+
+    <section id="coach" class="screen coach" hidden></section>
 
     <!-- studio 3D preview -->
     <section id="preview3d" class="pv3" hidden>
@@ -149,6 +152,7 @@
         <div class="results-body"></div>
         <div class="stack">
           <button class="btn primary" data-res="again">Race again</button>
+          <button class="btn" data-res="coach">Analyse laps</button>
           <button class="btn" data-res="modes">Change race settings</button>
           <button class="btn ghost" data-res="menu">Main menu</button>
         </div>
