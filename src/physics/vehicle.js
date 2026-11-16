@@ -113,7 +113,11 @@ export class Vehicle {
     let brk = clamp(input.brake || 0, 0, 1);
     if (this.shiftTimer > 0) this.shiftTimer -= dt;
     const fwdSpeed = this.u;
-    if (A.autoShift || this.gear <= 0) this.autoGear(thr, brk, dt);
+    if (input.hold) {
+      // start-line hold: brakes on, but never select reverse
+      if (this.gear <= 0) this.gear = 1;
+      this.reverseTimer = 0;
+    } else if (A.autoShift || this.gear <= 0) this.autoGear(thr, brk, dt);
     if (!A.autoShift) {
       if (input.shiftUp && this.gear < p.gears.length && this.shiftTimer <= 0) { this.gear = Math.max(1, this.gear + 1); this.shiftTimer = p.shiftTime; }
       if (input.shiftDown && this.gear > -1 && this.shiftTimer <= 0) {
@@ -132,6 +136,7 @@ export class Vehicle {
     const u = this.u, v = this.v, r = this.r;
     const absU = Math.abs(u);
     const steerIn = clamp(input.steer || 0, -1, 1);
+    this.steerInput = steerIn;
     const sm = this.steerMap();
     // input = demand on the tyres: full lock at speed asks for peak front grip,
     // and (with assist) the wheels are referenced to where the front axle is
@@ -291,6 +296,12 @@ export class Vehicle {
         if (slip0 < -kp * lim) w.brakeMod = Math.max(0.25, w.brakeMod - dt * 14 * A.abs);
         else w.brakeMod = Math.min(1, w.brakeMod + dt * 6);
         bT *= lerp(1, w.brakeMod, A.abs);
+        // ABS cap: never ask for more torque than the tyre can turn into
+        // braking force; when steering, reserve grip for turning (cornering
+        // brake control) so a full keyboard brake still lets you turn in
+        const steerUse = Math.min(1, Math.abs(this.steerInput || 0));
+        const cap = mu * Fz * R * (1.12 - 0.55 * steerUse * steerUse) * (w.front ? 1 : 0.92);
+        bT = lerp(bT, Math.min(bT, cap), A.abs);
       } else w.brakeMod = 1;
       const dB = (dt * bT) / Ieff;
       if (Math.abs(om) <= dB) { om = 0; if (bT > 0 && Math.abs(vl) > 1) anyLock = true; }
@@ -314,7 +325,13 @@ export class Vehicle {
       if (driven.includes(k)) spinSum += kappa;
       // to body frame
       const bfx = fl * cd - ft * sd;
-      const bfy = fl * sd + ft * cd;
+      let bfy = fl * sd + ft * cd;
+      // gameplay: a locked front tyre still bites a little in the direction
+      // it is pointed, so you can steer while the brakes are locked
+      const ls = p.lockSteer || 0;
+      if (ls > 0 && w.front && Math.abs(kappa) > 0.5 && Math.abs(vl) > 1) {
+        bfy += ls * mu * Fz * clamp(d / 0.25, -1, 1) * smoothstep(1, 6, Math.abs(vl));
+      }
       Fx += bfx; Fy += bfy;
       Mz += px * bfy - py * bfx;
     }
@@ -424,7 +441,7 @@ export class Vehicle {
     const s = Math.hypot(sx, sy);
     if (s < 1e-6) return [0, 0];
     const f = this.curve.f(s) * mu * Fz;
-    return [(f * sx) / s, (-f * sy) / s * 1.0];
+    return [(f * sx) / s, (-f * sy) / s];
   }
 
   autoGear(thr, brk, dt) {

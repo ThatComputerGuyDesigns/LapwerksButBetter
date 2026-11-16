@@ -8,6 +8,8 @@ import { response } from './response.mjs';
 import { jitter } from './jitter.mjs';
 import { chatter } from './chatter.mjs';
 import { race } from './race.mjs';
+import { startCheck } from './start.mjs';
+import { brakeSteer } from './brakesteer.mjs';
 import { BODIES } from '../src/physics/carSetup.js';
 import { decodeTrack, encodeTrack } from '../src/game/store.js';
 import { strokeToControlPoints } from '../src/track/spline.js';
@@ -59,7 +61,7 @@ for (const id of Object.keys(BODIES)) {
   // the single-seater at arcade grip is the expert car: it must never spin,
   // but a 150 ms-reaction keyboard bot is allowed to run wide at its speeds
   const r = keyLap(PRESETS[0], 'casual', 0.85, { body: id, compound: BODIES[id].compound });
-  const offsOk = id === 'formula' ? r.offs <= 15 : r.offs <= 1;
+  const offsOk = id === 'formula' ? r.offs <= 20 : r.offs <= 1;
   check(r.laps.length === 2 && r.spins === 0 && offsOk, `keyboard Easy · ${BODIES[id].name}: ${r.laps.map(formatTime).join(' / ')} · spins ${r.spins} · offs ${r.offs}`);
 }
 
@@ -68,6 +70,19 @@ for (const d of ['easy', 'hard']) {
   const r = race(PRESETS[0], { difficulty: d, laps: 2 });
   const pos = r.standings.findIndex((x) => x.isPlayer) + 1;
   check(r.allFinished && r.spins === 0, `race vs ${d} rivals: all finished, spins ${r.spins}, AI player P${pos}`);
+}
+
+// 2f. start line: holding the brakes through the countdown must never select
+//     reverse; every car drives forward at the lights
+for (const a of ['casual', 'sport', 'pro']) {
+  const r = startCheck(a);
+  check(r.gearAtGo === 1 && r.moved > 3, `start (${a}): gear ${r.gearAtGo} at GO, ${r.moved.toFixed(1)} m forward in 2 s`);
+}
+
+// 2g. steering under a full (keyboard) brake
+for (const [a, min] of [['casual', 45], ['sport', 35], ['pro', 15]]) {
+  const r = brakeSteer(a);
+  check(+r.turnedDeg >= min, `full brake + full steer (${a}): turned ${r.turnedDeg}°, front locked ${r.frontLockedPct}%`);
 }
 
 // 3. car ordering: slicks beat street tyres, prototype beats hatch

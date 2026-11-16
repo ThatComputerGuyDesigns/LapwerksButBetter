@@ -79,7 +79,7 @@ export class RaceField {
     const all = [{ car: this.s.car, isPlayer: true }, ...this.cars];
     for (const r of this.cars) {
       r.prev.x = r.car.x; r.prev.z = r.car.z; r.prev.h = r.car.heading;
-      if (!running || raceTime < r.react) { r.car.step(dt, { throttle: 0, brake: 1, steer: 0 }); continue; }
+      if (!running || raceTime < r.react) { r.car.step(dt, { throttle: 0, brake: 1, steer: 0, hold: true }); continue; }
       if (r.finished != null) r.ai.pace = 0.75; // cool-down lap
       else r.ai.pace = r.basePace * this.rubberBand(r);
       // traffic: look for a car ahead on our line and pick a side / lift

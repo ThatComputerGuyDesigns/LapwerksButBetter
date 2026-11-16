@@ -115,9 +115,9 @@ export const DEFAULT_SETUP = {
  */
 export const GRIP_LEVELS = {
   // transfer: weight-transfer scale (arcade cars stay planted at huge g)
-  arcade: { grip: 3.05, brake: 3.3, steer: 1.35, transfer: 0.3 },
-  sport: { grip: 1.5, brake: 1.6, steer: 1.2, transfer: 0.7 },
-  real: { grip: 1, brake: 1, steer: 1, transfer: 1 },
+  arcade: { grip: 3.05, brake: 3.3, steer: 1.35, transfer: 0.3, lockSteer: 0.35 },
+  sport: { grip: 1.5, brake: 1.6, steer: 1.2, transfer: 0.7, lockSteer: 0.2 },
+  real: { grip: 1, brake: 1, steer: 1, transfer: 1, lockSteer: 0 },
 };
 export const GAMEPLAY = { ...GRIP_LEVELS.arcade };
 export function setGripLevel(k) { Object.assign(GAMEPLAY, GRIP_LEVELS[k] || GRIP_LEVELS.arcade); }
@@ -150,6 +150,7 @@ export function makeCarParams(setup = DEFAULT_SETUP) {
     b: B.wheelbase * B.weightFront,
     cgHeight: B.cgHeight * GAMEPLAY.transfer,
     heatScale: 1 / GAMEPLAY.grip,
+    lockSteer: GAMEPLAY.lockSteer || 0,
     trackF: B.trackF,
     trackR: B.trackR,
     wheelR: B.wheelR,

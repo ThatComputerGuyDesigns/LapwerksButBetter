@@ -156,7 +156,7 @@ export class DriveSession {
       }
       // keep the car still but let the engine rev
       const thr = cmd.throttle;
-      car.step(PHYS_DT, { throttle: 0, brake: 1, steer: cmd.steer });
+      car.step(PHYS_DT, { throttle: 0, brake: 1, steer: cmd.steer, hold: true });
       this.field?.step(PHYS_DT, 0, false);
       car.rpm = lerp(car.rpm, car.p.engine.idle + thr * car.p.engine.redline * 0.75, 1 - Math.exp(-dt * 8));
       car.throttle = thr;
