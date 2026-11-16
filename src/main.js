@@ -24,7 +24,7 @@ import { TrackEditor, drawThumb } from './ui/editor.js';
 import { Garage } from './ui/garage.js';
 import { formatTime, clamp } from './core/math.js';
 
-const VERSION = '0.1.0';
+const VERSION = '0.6.0';
 const $ = (s) => document.querySelector(s);
 
 const DEFAULT_SETTINGS = {
@@ -112,7 +112,17 @@ class App {
   }
 
   // ------------------------------------------------------------ screens
+  /** Short fade to black over screen changes (hides the swap of scenes). */
+  veil() {
+    const v = $('.fade-veil');
+    if (!v) return;
+    v.classList.add('on');
+    clearTimeout(this.veilT);
+    this.veilT = setTimeout(() => v.classList.remove('on'), 240);
+  }
+
   hideAll() {
+    this.veil();
     for (const id of ['home', 'reveal', 'hud', 'pause', 'settings', 'circuits', 'modes', 'results', 'rc', 'rcsetup', 'rcreport', 'career']) $('#' + id).hidden = true;
     setGripLevel(this.settings.grip); // race control runs on realistic grip; restore yours
     if (this.editor.active) this.editor.close();
@@ -192,6 +202,7 @@ class App {
     $('#loader').hidden = false;
     $('#loader').classList.remove('fade');
     $('.loader-text').textContent = 'Laying asphalt…';
+    this.tip();
     await new Promise((r) => setTimeout(r, 30));
     await this.loadTrack(def);
     $('#loader').classList.add('fade');
@@ -239,6 +250,21 @@ class App {
     cam.fov = 45;
     cam.updateProjectionMatrix();
     this.world.followShadow(new THREE.Vector3(cx, T.meanY, cz));
+  }
+
+  tip() {
+    const TIPS = [
+      'Hold Backspace to rewind a mistake. It costs you that lap\'s time.',
+      'Tuck in behind a rival on a straight. The slipstream cuts your drag by up to 40%.',
+      'Full brake and full steer still turns the car. The ABS saves grip for steering.',
+      'Race Control: press R to review the next case, then 1–6 to rule.',
+      'A car stopped on the racing line needs a VSC or the Safety Car, not just a yellow.',
+      'Settings → Grip changes the whole feel: Arcade, Sport or Realistic.',
+      'Career stars unlock the next championship. Time trials pay out on gold.',
+      'Press C for cameras, F for the FPS meter, L to toggle the driving line.',
+    ];
+    const el = $('.loader-tip');
+    if (el) el.textContent = TIPS[Math.floor(Math.random() * TIPS.length)];
   }
 
   // ------------------------------------------------------------ persistence
@@ -363,6 +389,7 @@ class App {
     this.careerUI.close();
     $('#loader').hidden = false; $('#loader').classList.remove('fade');
     $('.loader-text').textContent = `${tier.name} · ${event.name}`;
+    this.tip();
     await new Promise((r) => setTimeout(r, 30));
     this.setup = { ...this.setup, body, compound: BODIES[body].compound, drivetrain: null };
     this.saveSetup();

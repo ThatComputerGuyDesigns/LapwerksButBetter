@@ -1,95 +1,128 @@
-// Race Control director UI: timing tower, incident queue, flags, cameras,
-// message ticker, review room with decisions, and the end-of-race report.
+// Race Control desk: timing tower, track-status alerts with one-click
+// responses, a stewards' case list, case-file review with evidence, flags,
+// cameras, time controls, keyboard shortcuts and the end-of-race report.
 import { DECISIONS, FLAGS } from '../game/raceControl.js';
-import { RC_CAMERAS } from '../game/controlSession.js';
 import { formatTime } from '../core/math.js';
 import { audio } from '../audio/audio.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const TYPE_ICON = { contact: '💥', limits: '⚠️', spin: '🌀', stopped: '🛑' };
+const chip = (r) => `<span class="rc-chip"><i style="background:${r.setup.paint}"></i>#${r.setup.number} ${esc(r.name.split(' ').pop())}</span>`;
+const isCase = (i) => i.type === 'contact' || i.type === 'limits';
+const KEYS = { nfa: '1', warn: '2', p5: '3', p10: '4', dt: '5', dsq: '6' };
 
 export class RaceControlUI {
   constructor(app, root) {
     this.app = app;
     this.root = root;
+    this.tab = 'cases';
+    this.dismissed = new Set();
     root.innerHTML = `
       <div class="rc-top">
         <div class="rc-flag"><i></i><b>GREEN</b></div>
         <div class="rc-lap"></div>
+        <div class="seg small rc-speed" title="Time"><button data-speed="1" class="on">1×</button><button data-speed="2">2×</button><button data-speed="4">4×</button></div>
         <div class="rc-score" title="Your stewarding score"></div>
+        <button class="icon-btn rc-help" title="Shortcuts">?</button>
         <button class="icon-btn rc-exit" title="Leave race control"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
+      <div class="rc-alerts"></div>
       <div class="rc-tower"></div>
-      <div class="rc-side">
-        <div class="rc-panel-title">Incidents <span class="rc-open"></span></div>
-        <div class="rc-incidents"></div>
-        <div class="rc-panel-title">Race control messages</div>
-        <div class="rc-log"></div>
+      <div class="rc-desk">
+        <div class="rc-tabs"><button data-tab="cases" class="on">Cases <em class="rc-count"></em></button><button data-tab="decided">Decided</button><button data-tab="log">Log</button></div>
+        <div class="rc-list"></div>
       </div>
       <div class="rc-bottom">
         <div class="rc-group"><span>Flags</span>
-          <button data-flag="green" class="g">Green</button>
-          <button data-flag="yellow" data-sector="0" class="y">Yellow S1</button>
-          <button data-flag="yellow" data-sector="1" class="y">S2</button>
-          <button data-flag="yellow" data-sector="2" class="y">S3</button>
+          <button data-flag="green" class="g" title="Green / safety car in">Green</button>
+          <button data-flag="yellow" data-sector="0" class="y">Y·S1</button>
+          <button data-flag="yellow" data-sector="1" class="y">Y·S2</button>
+          <button data-flag="yellow" data-sector="2" class="y">Y·S3</button>
           <button data-flag="vsc" class="o">VSC</button>
           <button data-flag="sc" class="o">Safety car</button>
           <button data-flag="red" class="r">Red</button>
         </div>
         <div class="rc-group"><span>Camera</span>
-          <button data-auto class="on">Auto</button>
-          ${RC_CAMERAS.map((c) => `<button data-cam="${c}">${{ tv: 'TV', chase: 'Chase', onboard: 'Onboard', heli: 'Heli' }[c]}</button>`).join('')}
+          <button data-auto class="on" title="Auto director">Director</button>
+          <button data-cam="tv">TV</button><button data-cam="heli">Heli</button><button data-cam="chase">Chase</button><button data-cam="onboard">Onboard</button>
         </div>
       </div>
       <div class="rc-ticker"></div>
       <div class="rc-review" hidden>
         <div class="rv-card glass">
-          <div class="rv-head"><b class="rv-title"></b><span class="rv-sub"></span></div>
-          <div class="rv-controls">
-            <button data-rv="play">⏯</button>
-            <input type="range" min="0" max="1000" value="0" class="rv-scrub">
-            <span class="rv-time"></span>
-            <div class="seg small rv-speed"><button data-sp="0.25">¼×</button><button data-sp="0.5" class="on">½×</button><button data-sp="1">1×</button></div>
+          <div class="rv-head"><b class="rv-title"></b><span class="rv-sub"></span><button class="icon-btn rv-x" title="Back to live (Esc)"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+          <div class="rv-grid">
+            <div class="rv-evidence"></div>
+            <div class="rv-right">
+              <div class="rv-controls">
+                <button data-rv="play" title="Play / pause (Space)">⏯</button>
+                <input type="range" min="0" max="1000" value="0" class="rv-scrub">
+                <span class="rv-time"></span>
+              </div>
+              <div class="rv-row"><div class="seg small rv-speed"><button data-sp="0.25">¼×</button><button data-sp="0.5" class="on">½×</button><button data-sp="1">1×</button></div>
+                <div class="seg small rv-angles"><button data-ang="tv" class="on">TV</button><button data-ang="carA">Car A</button><button data-ang="carB">Car B</button><button data-ang="overhead">Above</button></div></div>
+              <div class="rv-culprit"></div>
+              <div class="rv-decisions">${DECISIONS.map((d) => `<button data-dec="${d.id}" class="${d.id}"><kbd>${KEYS[d.id]}</kbd>${d.label}</button>`).join('')}</div>
+            </div>
           </div>
-          <div class="rv-angles seg small"><button data-ang="tv" class="on">TV</button><button data-ang="carA">Car A</button><button data-ang="carB">Car B</button><button data-ang="overhead">Overhead</button></div>
-          <div class="rv-culprit"></div>
-          <div class="rv-decisions">${DECISIONS.map((d) => `<button data-dec="${d.id}" class="${d.id}">${d.label}</button>`).join('')}</div>
-          <button class="btn ghost rv-close">Back to live</button>
         </div>
+      </div>
+      <div class="rc-shortcuts glass" hidden>
+        <b>Shortcuts</b>
+        <span><kbd>R</kbd> review next case</span><span><kbd>1</kbd>–<kbd>6</kbd> rulings in review</span><span><kbd>Space</kbd> play / pause replay</span>
+        <span><kbd>Esc</kbd> back to live</span><span><kbd>Tab</kbd> camera</span><span><kbd>F</kbd> time 1× / 2× / 4×</span><span><kbd>Y</kbd> yellow in the focused car's sector</span>
       </div>`;
     this.q = (s) => root.querySelector(s);
     this.bind();
   }
 
-  get S() { return this.app.session; }
+  get S() { return this.app.session?.rc ? this.app.session : null; }
 
   bind() {
     const r = this.root;
     r.querySelector('.rc-exit').addEventListener('click', () => { audio.click(); this.app.showHome(); });
+    r.querySelector('.rc-help').addEventListener('click', () => { this.q('.rc-shortcuts').hidden = !this.q('.rc-shortcuts').hidden; });
+    r.querySelector('.rc-speed').addEventListener('click', (e) => { const b = e.target.closest('[data-speed]'); if (b) this.setSpeed(+b.dataset.speed); });
     r.querySelector('.rc-bottom').addEventListener('click', (e) => {
       const b = e.target.closest('button');
       if (!b || !this.S) return;
       audio.click();
       if (b.dataset.flag) this.S.rc.setFlag(b.dataset.flag, +b.dataset.sector);
-      if (b.dataset.auto !== undefined) { this.S.autoDirector = !this.S.autoDirector; b.classList.toggle('on', this.S.autoDirector); }
-      if (b.dataset.cam) { this.S.camMode = b.dataset.cam; this.S.camInit = false; }
+      if (b.dataset.auto !== undefined) { this.S.autoDirector = !this.S.autoDirector; }
+      if (b.dataset.cam) { this.S.camMode = b.dataset.cam; this.S.camInit = false; this.S.shotT = 0; this.S.autoDirector = false; }
       this.render(true);
     });
     r.querySelector('.rc-tower').addEventListener('click', (e) => {
       const row = e.target.closest('[data-car]');
       if (!row || !this.S) return;
       audio.click();
-      const entry = this.S.field.cars[+row.dataset.car];
-      this.S.setFocus(entry);
+      this.S.setFocus(this.S.field.cars[+row.dataset.car]);
       this.S.autoDirector = false;
-      this.q('[data-auto]').classList.remove('on');
+      this.render(true);
     });
-    r.querySelector('.rc-incidents').addEventListener('click', (e) => {
-      const b = e.target.closest('[data-review]');
+    r.querySelector('.rc-tabs').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-tab]');
+      if (!b) return;
+      this.tab = b.dataset.tab;
+      r.querySelectorAll('.rc-tabs button').forEach((x) => x.classList.toggle('on', x === b));
+      this.render(true);
+    });
+    r.querySelector('.rc-list').addEventListener('click', (e) => {
+      const b = e.target.closest('button');
       if (!b || !this.S) return;
       audio.click();
-      const inc = this.S.rc.incidents.find((i) => i.id === +b.dataset.review);
-      if (inc) this.openReview(inc);
+      const inc = this.S.rc.incidents.find((i) => i.id === +(b.dataset.review || b.dataset.quick));
+      if (!inc) return;
+      if (b.dataset.review) this.openReview(inc);
+      else this.rule(inc, 'nfa', inc.cars[0]);
+    });
+    r.querySelector('.rc-alerts').addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b || !this.S) return;
+      audio.click();
+      if (b.dataset.act === 'dismiss') this.dismissed.add(+b.dataset.inc);
+      else if (b.dataset.act === 'watch') { const inc = this.S.rc.incidents.find((i) => i.id === +b.dataset.inc); if (inc) { this.S.setFocus(inc.cars[0]); this.S.autoDirector = false; } }
+      else { this.S.rc.setFlag(b.dataset.act, +b.dataset.sector); this.dismissed.add(+b.dataset.inc); }
+      this.render(true);
     });
     const rv = r.querySelector('.rc-review');
     rv.addEventListener('click', (e) => {
@@ -99,16 +132,10 @@ export class RaceControlUI {
       audio.click();
       if (b.dataset.rv === 'play') R.playing = !R.playing;
       if (b.dataset.sp) { R.speed = +b.dataset.sp; rv.querySelectorAll('[data-sp]').forEach((x) => x.classList.toggle('on', x === b)); }
-      if (b.dataset.ang) { R.angle = b.dataset.ang; rv.querySelectorAll('[data-ang]').forEach((x) => x.classList.toggle('on', x === b)); }
+      if (b.dataset.ang) { R.angle = b.dataset.ang; this.S.camInit = false; rv.querySelectorAll('[data-ang]').forEach((x) => x.classList.toggle('on', x === b)); }
       if (b.dataset.culprit !== undefined) { this.culprit = +b.dataset.culprit; this.renderCulprit(); }
-      if (b.dataset.dec) {
-        const inc = R.inc;
-        const target = inc.cars[this.culprit] || inc.cars[0];
-        const res = this.S.rc.decide(inc.id, b.dataset.dec, target);
-        if (res) this.message(`Decision: ${DECISIONS.find((d) => d.id === b.dataset.dec).label} · ${res.verdict}${res.pts ? ` (${res.pts > 0 ? '+' : ''}${res.pts})` : ''}`);
-        this.closeReview();
-      }
-      if (b.classList.contains('rv-close')) this.closeReview();
+      if (b.dataset.dec) this.rule(R.inc, b.dataset.dec, R.inc.cars[this.culprit] || R.inc.cars[0]);
+      if (b.classList.contains('rv-x')) this.closeReview();
     });
     rv.querySelector('.rv-scrub').addEventListener('input', (e) => {
       const R = this.S?.review;
@@ -116,31 +143,88 @@ export class RaceControlUI {
       R.t = R.t0 + (R.t1 - R.t0) * (+e.target.value / 1000);
       R.playing = false;
     });
+    window.addEventListener('keydown', (e) => this.key(e));
+  }
+
+  key(e) {
+    if (this.app.screen !== 'control' || !this.S || e.target.tagName === 'INPUT') return;
+    const S = this.S;
+    if (S.review) {
+      const d = Object.entries(KEYS).find(([, k]) => k === e.key);
+      if (d) { e.preventDefault(); this.rule(S.review.inc, d[0], S.review.inc.cars[this.culprit] || S.review.inc.cars[0]); return; }
+      if (e.code === 'Space') { e.preventDefault(); S.review.playing = !S.review.playing; }
+      if (e.code === 'ArrowLeft') S.review.t = Math.max(S.review.t0, S.review.t - 0.5);
+      if (e.code === 'ArrowRight') S.review.t = Math.min(S.review.t1, S.review.t + 0.5);
+      return;
+    }
+    if (e.code === 'KeyR') { const next = this.pending()[0]; if (next) this.openReview(next); }
+    if (e.code === 'Tab') { e.preventDefault(); S.cycleCamera(); S.autoDirector = false; S.shotT = 0; }
+    if (e.code === 'KeyF') this.setSpeed(S.timeScale === 1 ? 2 : S.timeScale === 2 ? 4 : 1);
+    if (e.code === 'KeyY') S.rc.setFlag('yellow', S.rc.sectorOf(S.car.q.s));
+  }
+
+  setSpeed(k) {
+    if (!this.S) return;
+    this.S.timeScale = k;
+    this.root.querySelectorAll('[data-speed]').forEach((b) => b.classList.toggle('on', +b.dataset.speed === k));
+  }
+
+  pending() { return this.S ? this.S.rc.incidents.filter((i) => i.status === 'open' && isCase(i)).sort((a, b) => a.time - b.time) : []; }
+
+  rule(inc, decId, target) {
+    const res = this.S.rc.decide(inc.id, decId, target);
+    if (res) {
+      const d = DECISIONS.find((x) => x.id === decId);
+      this.message(`${d.label}${decId !== 'nfa' ? ` · #${target.setup.number} ${target.name}` : ''}`);
+      audio.beep(decId === 'nfa' ? 660 : 880, 0.12, 0.12, 'triangle');
+    }
+    if (this.S.review) this.closeReview();
+    this.render(true);
   }
 
   openReview(inc) {
     this.S.openReview(inc);
-    this.culprit = inc.fault ? inc.cars.indexOf(inc.fault) : 0;
-    if (this.culprit < 0) this.culprit = 0;
-    this.q('.rv-title').textContent = `Incident ${inc.id} · ${inc.title}`;
-    this.q('.rv-sub').textContent = `Lap ${inc.lap} · sector ${inc.sector + 1}${inc.speed ? ` · ${(inc.speed * 3.6).toFixed(0)} km/h closing` : ''}${inc.count ? ` · strike ${inc.count}` : ''}`;
-    this.q('.rv-decisions').hidden = !inc.expected && inc.type !== 'contact' && inc.type !== 'limits';
+    this.culprit = inc.fault ? Math.max(0, inc.cars.indexOf(inc.fault)) : 0;
+    this.q('.rv-title').textContent = `Case ${inc.id} · ${inc.title}`;
+    this.q('.rv-sub').textContent = `Lap ${inc.lap} · Sector ${inc.sector + 1} · ${formatTime(inc.time).slice(0, -4)}`;
+    this.q('.rv-evidence').innerHTML = this.evidenceHTML(inc);
+    this.q('.rv-decisions').hidden = !isCase(inc) || inc.status === 'decided';
+    this.root.querySelectorAll('[data-ang]').forEach((x) => x.classList.toggle('on', x.dataset.ang === 'tv'));
     this.renderCulprit();
     this.q('.rc-review').hidden = false;
+    this.root.classList.add('reviewing');
+  }
+
+  evidenceHTML(inc) {
+    const E = inc.evidence;
+    if (inc.type === 'contact' && E) {
+      const row = (k, v) => `<div><span>${k}</span><b>${v}</b></div>`;
+      return `<div class="ev-cars">${chip(E.behind)}<em>behind</em>${chip(E.ahead)}<em>ahead</em></div>
+        ${row('Closing speed', `${E.closing.toFixed(0)} km/h`)}
+        ${row('Overlap at contact', `${E.overlap}% ${E.overlap > 45 ? '(alongside)' : '(not alongside)'}`)}
+        ${row(`Speed #${E.behind.setup.number} / #${E.ahead.setup.number}`, `${E.speedA.toFixed(0)} / ${E.speedB.toFixed(0)} km/h`)}
+        ${row('Braking', `${E.brakeA > 0.2 ? 'yes' : 'no'} / ${E.brakeB > 0.2 ? 'yes' : 'no'}`)}
+        ${row('Moved across', E.moverA ? `#${E.behind.setup.number}` : E.moverB ? `#${E.ahead.setup.number}` : 'neither')}
+        ${row('Consequence', inc.consequence ? 'victim lost places / spun' : inc.checkAt ? 'assessing…' : 'none')}
+        ${inc.status === 'decided' ? `<p class="ev-verdict">Ruling: ${DECISIONS.find((d) => d.id === inc.decision)?.label} · ${inc.verdict}</p>` : ''}`;
+    }
+    if (inc.type === 'limits') return `<div class="ev-cars">${chip(inc.cars[0])}</div><div><span>Track-limit strikes</span><b>${inc.count}</b></div><p class="ev-note">Guideline: warning after 3, then penalties for repeat offences.</p>`;
+    return `<div class="ev-cars">${chip(inc.cars[0])}</div><p class="ev-note">${inc.type === 'stopped' ? (inc.onTrack ? 'Stopped in the racing line. Neutralise the race.' : 'Stopped off the circuit. Local yellows protect the marshals.') : 'Spin. Watch for a stopped car.'}</p>`;
   }
 
   renderCulprit() {
-    const inc = this.S.review?.inc;
+    const inc = this.S?.review?.inc;
     if (!inc) return;
-    this.q('.rv-culprit').innerHTML = inc.cars.length > 1
-      ? `<span>Penalise:</span>${inc.cars.map((c, k) => `<button data-culprit="${k}" class="${k === this.culprit ? 'on' : ''}">#${c.setup.number} ${esc(c.name)}</button>`).join('')}`
-      : `<span>Driver:</span><b>#${inc.cars[0].setup.number} ${esc(inc.cars[0].name)}</b>`;
+    this.q('.rv-culprit').innerHTML = inc.cars.length > 1 && isCase(inc) && inc.status !== 'decided'
+      ? `<span>Penalise</span>${inc.cars.map((c, k) => `<button data-culprit="${k}" class="${k === this.culprit ? 'on' : ''}">#${c.setup.number} ${esc(c.name)}</button>`).join('')}`
+      : '';
   }
 
   closeReview() {
     this.S?.closeReview();
     if (this.S) this.S.setFocus(this.S.focus);
     this.q('.rc-review').hidden = true;
+    this.root.classList.remove('reviewing');
     this.render(true);
   }
 
@@ -149,64 +233,76 @@ export class RaceControlUI {
     t.textContent = text;
     t.classList.add('show');
     clearTimeout(this.tickT);
-    this.tickT = setTimeout(() => t.classList.remove('show'), 3500);
+    this.tickT = setTimeout(() => t.classList.remove('show'), 3200);
   }
 
-  incidentsChanged() { this.dirtyInc = true; }
+  incidentsChanged() { this.dirty = true; }
 
   render(force) {
     const S = this.S;
-    if (!S || !S.rc) return;
+    if (!S) return;
     this.frame = (this.frame || 0) + 1;
     const RC = S.rc, F = S.field;
-    // review scrubber
     if (S.review) {
       const R = S.review;
-      this.q('.rv-scrub').value = String(Math.round(((R.t - R.t0) / (R.t1 - R.t0)) * 1000));
-      this.q('.rv-time').textContent = `${(R.t - R.inc.time).toFixed(1)} s`;
+      this.q('.rv-scrub').value = String(Math.round(((R.t - R.t0) / Math.max(R.t1 - R.t0, 0.01)) * 1000));
+      const rel = R.t - R.inc.time;
+      this.q('.rv-time').textContent = `${rel >= 0 ? '+' : '−'}${Math.abs(rel).toFixed(1)} s`;
+      if (this.frame % 10 === 0) this.q('.rv-evidence').innerHTML = this.evidenceHTML(R.inc);
     }
-    if (!force && this.frame % 8) return;
-    // flag
-    const sectors = [...RC.yellowSectors].map((s) => s + 1);
-    const f = RC.flag !== 'green' ? FLAGS[RC.flag] : sectors.length ? { label: `YELLOW S${sectors.join(',')}`, color: FLAGS.yellow.color } : FLAGS.green;
+    if (!force && this.frame % 6) return;
+    // flag + clock
+    const sectors = [...RC.yellowSectors].map((x) => x + 1);
+    const f = RC.flag !== 'green' ? FLAGS[RC.flag] : sectors.length ? { label: `YELLOW S${sectors.join(' S')}`, color: FLAGS.yellow.color } : FLAGS.green;
     this.q('.rc-flag b').textContent = RC.scEnding ? 'SC IN THIS LAP' : f.label;
     this.q('.rc-flag i').style.background = f.color;
+    this.q('.rc-flag').style.borderColor = f.color;
     const order = F.order();
-    const lead = order[0];
-    this.q('.rc-lap').textContent = `LAP ${Math.min(F.laps, lead.lapsDone + 1)}/${F.laps}  ·  ${formatTime(S.raceTime)}`;
+    this.q('.rc-lap').textContent = `LAP ${Math.min(F.laps, order[0].lapsDone + 1)}/${F.laps} · ${formatTime(S.raceTime).slice(0, -4)}`;
     const rep = RC.report();
-    this.q('.rc-score').innerHTML = `<b>${rep.grade}</b><span>Steward ${rep.correct}/${rep.decisions}</span><span>Safety ${Math.round(rep.safety)}%</span>`;
+    this.q('.rc-score').innerHTML = `<b>${rep.grade}</b><span>Rulings ${rep.correct}/${rep.decisions}</span><span>Safety ${Math.round(rep.safety)}%</span>`;
+    this.root.querySelectorAll('[data-auto]').forEach((b) => b.classList.toggle('on', S.autoDirector));
+    this.root.querySelectorAll('[data-cam]').forEach((b) => b.classList.toggle('on', !S.autoDirector && b.dataset.cam === S.camMode));
     // tower
     const L = this.app.track.length;
     let html = '';
     order.forEach((r, k) => {
       const idx = F.cars.indexOf(r);
-      let gap = '';
-      if (k === 0) gap = r.finished != null ? 'FIN' : 'Leader';
+      let gap;
+      if (k === 0) gap = r.finished != null ? 'FIN' : 'LEAD';
       else if (r.dsq) gap = 'DSQ';
-      else {
-        const ahead = order[k - 1];
-        let g = F.rank(ahead) - F.rank(r);
-        gap = g > L ? `+${Math.floor(g / L)}L` : `+${(g / Math.max(r.car.u, 20)).toFixed(1)}`;
-      }
-      const tags = `${r.penalty ? `<em class="pen">+${r.penalty}s</em>` : ''}${r.warnings ? `<em class="warn">W${r.warnings}</em>` : ''}${r.stoppedT > 1 ? '<em class="stop">STOP</em>' : ''}`;
+      else { const g = F.rank(order[k - 1]) - F.rank(r); gap = g > L ? `+${Math.floor(g / L)}L` : `+${(g / Math.max(r.car.u, 20)).toFixed(1)}`; }
+      const tags = `${r.penalty ? `<em class="pen">+${r.penalty}s</em>` : ''}${r.warnings ? `<em class="warn">W</em>` : ''}${r.stoppedT > 1 ? '<em class="stop">STOP</em>' : ''}`;
       html += `<div data-car="${idx}" class="${r === S.focus ? 'focus' : ''} ${r.dsq ? 'dsq' : ''}"><b>${k + 1}</b><i style="background:${r.setup.paint}"></i><span>${esc(r.name)}</span>${tags}<small>${gap}</small></div>`;
     });
     if (html !== this.lastTower) { this.q('.rc-tower').innerHTML = html; this.lastTower = html; }
-    // incidents (open first)
-    if (force || this.dirtyInc || this.frame % 30 === 0) {
-      this.dirtyInc = false;
-      const list = RC.incidents.slice(0, 40);
-      const open = RC.incidents.filter((i) => i.status === 'open' && (i.type === 'contact' || i.type === 'limits')).length;
-      this.q('.rc-open').textContent = open ? `${open} to review` : '';
-      this.q('.rc-incidents').innerHTML = list.length ? list.map((i) => `
-        <div class="inc ${i.status} sev${i.severity}">
-          <span class="ic">${TYPE_ICON[i.type] || '•'}</span>
-          <div><b>${esc(i.title)}</b><small>L${i.lap} S${i.sector + 1} · ${i.cars.map((c) => '#' + c.setup.number + ' ' + esc(c.name.split(' ').pop())).join(' / ')}</small>
-          ${i.status === 'decided' ? `<small class="dec">${DECISIONS.find((d) => d.id === i.decision)?.label}${i.verdict ? ' · ' + i.verdict : ''}</small>` : ''}</div>
-          <button data-review="${i.id}">${i.status === 'decided' ? 'Replay' : 'Review'}</button>
-        </div>`).join('') : '<p class="empty">No incidents yet. Watch the race and keep it safe.</p>';
-      this.q('.rc-log').innerHTML = RC.log.slice(0, 6).map((l) => `<div><span>${formatTime(l.t).slice(0, -4)}</span>${esc(l.text)}</div>`).join('');
+    // track-status alerts (stopped cars, uncovered danger) with one-click responses
+    const alerts = RC.incidents.filter((i) => i.type === 'stopped' && i.status === 'open' && !this.dismissed.has(i.id)).slice(0, 2);
+    const ah = alerts.map((i) => {
+      const covered = i.onTrack ? ['sc', 'vsc', 'red'].includes(RC.flag) : RC.flag !== 'green' || RC.yellowSectors.has(i.sector);
+      return `<div class="rc-alert ${covered ? 'ok' : ''}"><b>${covered ? '✓' : '⚠'} ${esc(i.title)} · S${i.sector + 1}</b><span>${chip(i.cars[0])}</span>
+        <div>${covered ? '' : i.onTrack ? `<button data-act="vsc" data-inc="${i.id}">VSC</button><button data-act="sc" data-inc="${i.id}">Safety car</button>` : `<button data-act="yellow" data-sector="${i.sector}" data-inc="${i.id}">Yellow S${i.sector + 1}</button>`}
+        <button data-act="watch" data-inc="${i.id}">Watch</button><button data-act="dismiss" data-inc="${i.id}">✕</button></div></div>`;
+    }).join('');
+    if (ah !== this.lastAlerts) { this.q('.rc-alerts').innerHTML = ah; this.lastAlerts = ah; }
+    // desk
+    const pend = this.pending();
+    this.q('.rc-count').textContent = pend.length ? String(pend.length) : '';
+    if (force || this.dirty || this.frame % 30 === 0) {
+      this.dirty = false;
+      let list;
+      if (this.tab === 'log') list = RC.log.slice(0, 30).map((l) => `<div class="rc-logline"><span>${formatTime(l.t).slice(0, -4)}</span>${esc(l.text)}</div>`).join('') || '<p class="empty">Nothing yet.</p>';
+      else {
+        const items = this.tab === 'cases' ? pend : RC.incidents.filter((i) => i.status === 'decided' || !isCase(i));
+        list = items.slice(0, 40).map((i) => `
+          <div class="case ${i.status} sev${i.severity}">
+            <div class="case-top"><b>${esc(i.title)}</b><small>L${i.lap} · S${i.sector + 1}</small></div>
+            <div class="case-cars">${i.cars.map(chip).join('')}</div>
+            ${i.status === 'decided' ? `<small class="dec">${DECISIONS.find((d) => d.id === i.decision)?.label} · ${i.verdict}</small>` : ''}
+            <div class="case-btns"><button data-review="${i.id}">${i.status === 'decided' ? 'Replay' : 'Review'}</button>${i.status === 'open' && isCase(i) ? `<button data-quick="${i.id}" class="ghost">No action</button>` : ''}</div>
+          </div>`).join('') || `<p class="empty">${this.tab === 'cases' ? 'No open cases. Keep an eye on the racing.' : 'Nothing decided yet.'}</p>`;
+      }
+      if (list !== this.lastList) { this.q('.rc-list').innerHTML = list; this.lastList = list; }
     }
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "kerbstone",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "private": true,
   "description": "Kerbstone — draw a circuit, build a car, race it.",
   "type": "module",

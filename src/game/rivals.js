@@ -7,6 +7,7 @@ import { makeCarParams, PAINTS, BODIES } from '../physics/carSetup.js';
 import { speedProfile } from '../track/racingLine.js';
 import { createCar, disposeCar } from '../car/carModel.js';
 import { clamp, angleWrap, rng } from '../core/math.js';
+import { CarPoser } from './pose.js';
 
 const NAMES = ['M. Okafor', 'L. Brandt', 'S. Varga', 'J. Takeda', 'R. Moreau', 'A. Lindqvist', 'C. Duarte', 'E. Novak', 'P. Rossetti', 'K. Adeyemi', 'T. Halloran', 'N. Ivanova'];
 const PACE = { easy: [0.84, 0.9], medium: [0.91, 0.955], hard: [0.965, 1.0] };
@@ -306,17 +307,12 @@ export class RaceField {
 
   /** Interpolated visuals for every rival. */
   sync(dt, alpha) {
-    const up = new THREE.Vector3(0, 1, 0), n = new THREE.Vector3(), qa = new THREE.Quaternion(), qh = new THREE.Quaternion();
     for (const r of this.cars) {
       const c = r.car;
       const x = r.prev.x + (c.x - r.prev.x) * alpha, z = r.prev.z + (c.z - r.prev.z) * alpha;
-      const h = r.prev.h + angleWrap(c.heading - r.prev.h) * alpha;
-      const q = c.q;
-      r.mesh.position.set(x, c.y, z);
-      n.set(q.normal[0], q.normal[1], q.normal[2]);
-      qa.setFromUnitVectors(up, n);
-      qh.setFromAxisAngle(up, h);
-      r.mesh.quaternion.copy(qa.multiply(qh));
+      r.visH = r.prev.h + angleWrap(c.heading - r.prev.h) * alpha;
+      r.poser = r.poser || new CarPoser();
+      r.poser.apply(r.mesh, this.T, x, z, r.visH, c.hint, dt);
       r.mesh.userData.sync(c, dt);
     }
   }

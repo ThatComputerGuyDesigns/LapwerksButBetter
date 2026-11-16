@@ -86,9 +86,23 @@ export class RaceControl {
     if (!fault && bRear === false && aFront === false) fault = null;
     const severity = closing > 9 ? 3 : closing > 6.5 ? 2 : 1;
     const victim = fault === ra ? rb : fault === rb ? ra : null;
+    // evidence for the steward's case file (A is the car behind)
+    let ds = B.q.s - A.q.s;
+    const L = this.T.length;
+    if (ds < -L / 2) ds += L;
+    if (ds > L / 2) ds -= L;
+    const carLen = (A.p.body.length || 4.5);
+    const overlap = Math.round(Math.max(0, Math.min(1, 1 - Math.abs(ds) / carLen)) * 100);
+    const latA = A.v, latB = B.v;
+    const evidence = {
+      behind: ra, ahead: rb, overlap, gap: Math.abs(ds),
+      speedA: A.u * 3.6, speedB: B.u * 3.6, brakeA: A.brake, brakeB: B.brake,
+      moverA: Math.abs(latA) > Math.abs(latB) + 0.8, moverB: Math.abs(latB) > Math.abs(latA) + 0.8,
+      closing: closing * 3.6, type: overlap > 45 ? 'side-by-side' : 'from behind',
+    };
     const inc = this.addIncident({
-      type: 'contact', title: 'Contact', cars: [ra, rb], fault, victim, severity, speed: closing,
-      lap: this.lapOf(ra), s: A.q.s, sector: this.sectorOf(A.q.s),
+      type: 'contact', title: evidence.type === 'side-by-side' ? 'Side-by-side contact' : 'Contact from behind', cars: [ra, rb], fault, victim, severity, speed: closing,
+      lap: this.lapOf(ra), s: A.q.s, sector: this.sectorOf(A.q.s), evidence,
     });
     // consequence check a few seconds later (did the victim spin / lose places?)
     if (victim && !inc.checkAt) {
