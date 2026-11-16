@@ -34,6 +34,10 @@
             <span><b>Drive</b><small class="drive-sub">Current circuit</small></span>
             <kbd>Enter</kbd>
           </button>
+          <button class="menu-item" data-go="control">
+            <svg viewBox="0 0 24 24"><path d="M5 21V4M5 4h11l-2 4 2 4H5" /></svg>
+            <span><b>Race Control</b><small>Direct the race. Flags, safety car, penalties.</small></span>
+          </button>
           <button class="menu-item" data-go="studio">
             <svg viewBox="0 0 24 24"><path d="M4 20c4-1 6-3 8-7s4-7 8-8" /></svg>
             <span><b>Track Studio</b><small>Draw a new circuit</small></span>
@@ -143,6 +147,24 @@
           <button class="btn" data-res="modes">Change race settings</button>
           <button class="btn ghost" data-res="menu">Main menu</button>
         </div>
+      </div>
+    </section>
+
+    <section id="rc" class="rc" hidden></section>
+
+    <section id="rcsetup" class="overlay" hidden>
+      <div class="panel glass wide">
+        <div class="panel-head"><h2>Race Control</h2><button class="icon-btn" data-close><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg></button></div>
+        <p class="rc-intro">You are the race director. The AI races; you keep it fair and safe. Review incidents and hand out penalties, throw yellows, deploy the Virtual Safety Car, the Safety Car or a red flag. You're scored on consistency and safety.</p>
+        <div class="rcsetup-body"></div>
+      </div>
+    </section>
+
+    <section id="rcreport" class="overlay" hidden>
+      <div class="panel glass wide">
+        <h2>Race Control report</h2>
+        <div class="rcreport-body"></div>
+        <div class="row-btns"><button class="btn primary" data-rr="again">Direct another race</button><button class="btn ghost" data-rr="menu">Main menu</button></div>
       </div>
     </section>
 

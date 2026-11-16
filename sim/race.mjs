@@ -23,7 +23,7 @@ export function race(preset, { laps = 3, rivals = 5, difficulty = 'medium', play
   const slot = F.resetGrid();
   S.car.reset(slot.s, slot.lat);
   const dt = 1 / 240;
-  let t = 0, lastS = S.car.q.s, impacts = 0, spins = 0;
+  let t = 0, lastS = S.car.q.s, impacts = 0, spins = 0, overtakes = 0, lastOrder = null, nextSample = 0;
   const spinning = new Map();
   while (t < 60 * 15) {
     S.car.step(dt, ai.control(S.car));
@@ -40,15 +40,24 @@ export function race(preset, { laps = 3, rivals = 5, difficulty = 'medium', play
       if (b && !spinning.get(c)) spins++;
       spinning.set(c, b);
     }
+    if (t >= nextSample) {
+      nextSample = t + 0.5;
+      const order = F.standings().map((x) => x.name).join('|');
+      if (lastOrder && order !== lastOrder) {
+        const a = lastOrder.split('|'), b = order.split('|');
+        for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) { overtakes++; break; }
+      }
+      lastOrder = order;
+    }
     if (F.playerFinished != null && F.cars.every((r) => r.finished != null)) break;
   }
-  return { t, standings: F.standings(), impacts, spins, allFinished: F.playerFinished != null && F.cars.every((r) => r.finished != null) };
+  return { t, standings: F.standings(), impacts, spins, overtakes, allFinished: F.playerFinished != null && F.cars.every((r) => r.finished != null) };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   for (const k of [0, 3, 4]) for (const d of ['easy', 'hard']) {
     const r = race(PRESETS[k], { difficulty: d });
-    console.log(`${PRESETS[k].name} [${d}] finished=${r.allFinished} t=${formatTime(r.t)} contacts=${r.impacts} spins=${r.spins}`);
+    console.log(`${PRESETS[k].name} [${d}] finished=${r.allFinished} t=${formatTime(r.t)} contacts=${r.impacts} spins=${r.spins} overtakes=${r.overtakes} spread=${(r.standings.at(-1).finished - r.standings[0].finished).toFixed(1)}s`);
     console.log('   ' + r.standings.map((x, i) => `${i + 1}.${x.isPlayer ? 'YOU' : x.name.split(' ')[1]} ${x.finished != null ? formatTime(x.finished) : '—'}`).join('  '));
   }
 }

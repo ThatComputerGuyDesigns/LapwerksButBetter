@@ -12,6 +12,8 @@ import { PRESETS, presetById } from './track/presets.js';
 import { DEFAULT_SETUP, makeCarParams, setGripLevel } from './physics/carSetup.js';
 import { ASSIST_PRESETS } from './physics/vehicle.js';
 import { DriveSession } from './game/drive.js';
+import { ControlSession } from './game/controlSession.js';
+import { RaceControlUI } from './ui/raceControlUI.js';
 import { Input } from './game/input.js';
 import { store, trackHash, encodeTrack, decodeTrack } from './game/store.js';
 import { audio } from './audio/audio.js';
@@ -24,7 +26,7 @@ const VERSION = '0.1.0';
 const $ = (s) => document.querySelector(s);
 
 const DEFAULT_SETTINGS = {
-  assists: 'casual', grip: 'arcade', race: { mode: 'race', laps: 3, rivals: 5, difficulty: 'medium' }, gearbox: 'auto', units: 'kmh', quality: 'auto', volume: 0.8, showLine: true, ghost: true, camera: 'chase',
+  assists: 'casual', grip: 'arcade', rc: { cars: 10, laps: 6, cls: 'gt', drama: 0.6 }, race: { mode: 'race', laps: 3, rivals: 5, difficulty: 'medium' }, gearbox: 'auto', units: 'kmh', quality: 'auto', volume: 0.8, showLine: true, ghost: true, camera: 'chase',
 };
 
 class App {
@@ -39,6 +41,7 @@ class App {
     this.hud = new HUD($('#hud'), this);
     this.editor = new TrackEditor(this, $('#studio'));
     this.garage = new Garage(this, $('#garage'));
+    this.rcui = new RaceControlUI(this, $('#rc'));
     this.screen = 'loading';
     this.session = null;
     this.lastT = performance.now();
@@ -106,7 +109,8 @@ class App {
 
   // ------------------------------------------------------------ screens
   hideAll() {
-    for (const id of ['home', 'reveal', 'hud', 'pause', 'settings', 'circuits', 'modes', 'results']) $('#' + id).hidden = true;
+    for (const id of ['home', 'reveal', 'hud', 'pause', 'settings', 'circuits', 'modes', 'results', 'rc', 'rcsetup', 'rcreport']) $('#' + id).hidden = true;
+    setGripLevel(this.settings.grip); // race control runs on realistic grip; restore yours
     if (this.editor.active) this.editor.close();
     if (this.garage.active) this.garage.close();
     this.input.captureKeys = false;
@@ -114,6 +118,7 @@ class App {
 
   showHome() {
     this.hideAll();
+    audio.setVolume(this.settings.volume);
     this.screen = 'home';
     $('#home').hidden = false;
     this.startAttract();
@@ -158,6 +163,7 @@ class App {
     if (id === 'settings') this.renderSettings();
     if (id === 'circuits') this.renderCircuits();
     if (id === 'modes') this.renderModes();
+    if (id === 'rcsetup') this.renderRcSetup();
   }
 
   closeOverlay(id) {
@@ -336,6 +342,59 @@ class App {
     body.querySelector('[data-start]').addEventListener('click', () => { audio.click(); this.startRace(); });
   }
 
+  // ------------------------------------------------------------ race control
+  renderRcSetup() {
+    const C = (this.settings.rc = { ...DEFAULT_SETTINGS.rc, ...(this.settings.rc || {}) });
+    const seg = (key, opts) => `<div class="seg small" data-rcs="${key}">${opts.map(([v, l]) => `<button data-v="${v}" class="${String(C[key]) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+    const body = $('.rcsetup-body');
+    body.innerHTML = `
+      <div class="race-opts rc-opts">
+        <div class="field"><span>Series</span>${seg('cls', [['hatch', 'Hot hatch'], ['club', 'Club sports'], ['gt', 'GT'], ['proto', 'Prototype'], ['formula', 'Grand Prix']])}</div>
+        <div class="field"><span>Field</span>${seg('cars', [[8, '8 cars'], [10, '10 cars'], [12, '12 cars']])}</div>
+        <div class="field"><span>Laps</span>${seg('laps', [[4, '4'], [6, '6'], [10, '10']])}</div>
+        <div class="field"><span>Drama</span>${seg('drama', [[0.3, 'Clean'], [0.6, 'Normal'], [0.95, 'Chaos']])}</div>
+      </div>
+      <div class="mode-foot"><span class="mode-track">${this.trackDef.name} · ${(this.track.length / 1000).toFixed(2)} km</span><button class="btn primary big" data-rcstart><svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg>Take control</button></div>`;
+    body.querySelectorAll('[data-rcs]').forEach((sg) => sg.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-v]');
+      if (!b) return;
+      audio.click();
+      const k = sg.dataset.rcs;
+      C[k] = k === 'cls' ? b.dataset.v : parseFloat(b.dataset.v);
+      this.saveSettings();
+      this.renderRcSetup();
+    }));
+    body.querySelector('[data-rcstart]').addEventListener('click', () => { audio.click(); this.startControl(); });
+  }
+
+  async startControl() {
+    this.hideAll();
+    this.screen = 'control';
+    if (this.session) this.session.dispose();
+    setGripLevel('real');
+    const C = this.settings.rc;
+    const bodies = { hatch: ['hatch', 'jdm', 'rally'], club: ['gt', 'muscle', 'rs', 'jdm'], gt: ['gt3', 'hyper', 'rs'], proto: ['proto', 'hyper'], formula: ['formula'] }[C.cls] || ['gt3'];
+    this.setup = { ...this.setup, body: bodies[0], compound: 'sport' };
+    this.session = new ControlSession(this, { cars: C.cars, laps: C.laps, bodies, drama: C.drama });
+    $('#rc').hidden = false;
+    this.rcui.render(true);
+    await audio.unlock();
+    audio.setVolume(this.settings.volume * 0.6);
+  }
+
+  onControlFinish(session) {
+    if (this.session !== session || this.screen !== 'control') return;
+    const RC = session.rc, F = session.field;
+    const rep = RC.report();
+    const order = F.order();
+    const decided = RC.incidents.filter((i) => i.status === 'decided' && i.expected);
+    $('.rcreport-body').innerHTML = `
+      <div class="rc-grade"><b>${rep.grade}</b><div><span>Overall ${rep.total}/100</span><span>Decisions ${rep.correct}/${rep.decisions} consistent</span><span>Safety ${Math.round(rep.safety)}%</span><span>${rep.open} case${rep.open === 1 ? '' : 's'} left unreviewed</span></div></div>
+      <div class="res-table">${order.map((r, k) => `<div><b>${k + 1}</b><i style="background:${r.setup.paint}"></i><span>${r.name}</span><em>${r.dsq ? 'DSQ' : r.finished != null ? formatTime(r.finished + (r.penalty || 0)) : '—'}${r.penalty ? ` (+${r.penalty}s)` : ''}</em><small>best ${r.best != null ? formatTime(r.best) : '—'}</small></div>`).join('')}</div>
+      ${decided.length ? `<h4 class="rc-h4">Your rulings</h4><div class="rc-rulings">${decided.map((i) => `<div><b>#${i.id} ${i.title}</b><span>${i.decision.toUpperCase()} → ${i.verdict}</span><em class="${i.points >= 50 ? 'good' : i.points < 0 ? 'bad' : ''}">${i.points > 0 ? '+' : ''}${i.points}</em></div>`).join('')}</div>` : ''}`;
+    $('#rcreport').hidden = false;
+  }
+
   onRaceFinish(session) {
     if (this.session !== session || this.screen !== 'race') return;
     const st = session.field.standings();
@@ -438,6 +497,7 @@ class App {
       if (!go) return;
       audio.click();
       if (go === 'drive') this.openOverlay('modes');
+      else if (go === 'control') this.openOverlay('rcsetup');
       else if (go === 'studio') this.openStudio(null);
       else if (go === 'garage') this.openGarage();
       else this.openOverlay(go);
@@ -470,7 +530,13 @@ class App {
       else if (a === 'modes') { this.showHome(); this.openOverlay('modes'); }
       else this.showHome();
     });
-    for (const id of ['settings', 'circuits', 'modes']) {
+    $('#rcreport').addEventListener('click', (e) => {
+      const a = e.target.closest('[data-rr]')?.dataset.rr;
+      if (!a) return;
+      audio.click();
+      if (a === 'again') { this.showHome(); this.openOverlay('rcsetup'); } else this.showHome();
+    });
+    for (const id of ['settings', 'circuits', 'modes', 'rcsetup']) {
       $('#' + id).addEventListener('click', (e) => {
         if (e.target.closest('[data-close]') || e.target === $('#' + id)) { audio.click(); this.closeOverlay(id); }
       });
@@ -491,6 +557,8 @@ class App {
         if (!$('#settings').hidden) return this.closeOverlay('settings');
         if (!$('#circuits').hidden) return this.closeOverlay('circuits');
         if (!$('#modes').hidden) return this.closeOverlay('modes');
+        if (!$('#rcsetup').hidden) return this.closeOverlay('rcsetup');
+        if (this.screen === 'control') { if (this.session?.review) return this.rcui.closeReview(); return this.showHome(); }
         if (this.screen === 'race') return this.togglePause();
         if (this.screen === 'garage' || this.screen === 'reveal') return this.showHome();
       }
@@ -582,6 +650,7 @@ class App {
       }
       this.session.update(dt, cmd);
       if (scr === 'race') this.input.rumble(this.session.car);
+      if (scr === 'control') this.rcui.render();
       if (scr === 'race') this.hud.update(this.session, this.settings);
     }
     this.world.tick(dt, scr === 'race' && this.session ? this.session.car.speed : 0);

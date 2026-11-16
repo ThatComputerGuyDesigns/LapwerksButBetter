@@ -22,7 +22,8 @@ export class AIDriver {
     // optional lateral shift off the racing line (overtaking / defending)
     let tx = L.x[j], tz = L.z[j];
     if (this.offset) {
-      const off = clamp(L.offset[j] + this.offset, -T.half + 1.1, T.half - 1.1) - L.offset[j];
+      const edge = this.edge ?? 1.1; // negative = allowed past the white line (mistakes)
+      const off = clamp(L.offset[j] + this.offset, -T.half + edge, T.half - edge) - L.offset[j];
       tx += T.nx[j] * off; tz += T.nz[j] * off;
     }
     const dx = tx - car.x, dz = tz - car.z;

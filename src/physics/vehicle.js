@@ -359,7 +359,7 @@ export class Vehicle {
     }
 
     // aero + resistance
-    const drag = 0.5 * RHO * p.aero.cdA * u * Math.abs(u);
+    const drag = 0.5 * RHO * p.aero.cdA * u * Math.abs(u) * (1 - (this.draft || 0));
     Fx -= drag;
     Fy -= 0.5 * RHO * p.aero.cdA * 2.5 * v * Math.abs(v);
 
