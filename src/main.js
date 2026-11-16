@@ -25,8 +25,9 @@ import { HUD } from './ui/hud.js';
 import { TrackEditor, drawThumb } from './ui/editor.js';
 import { Garage } from './ui/garage.js';
 import { formatTime, clamp } from './core/math.js';
+import { carShot } from './ui/renders.js';
 
-const VERSION = '0.6.0';
+const VERSION = '0.7.0';
 const $ = (s) => document.querySelector(s);
 
 const DEFAULT_SETTINGS = {
@@ -145,7 +146,8 @@ class App {
     $('#home').hidden = false;
     this.startAttract();
     this.updateHomeCard();
-    setTimeout(() => $('#home .menu-item.primary')?.focus({ preventScroll: true }), 50);
+    this.updateHomeTiles();
+    setTimeout(() => $('#home .tile')?.focus({ preventScroll: true }), 50);
   }
 
   startAttract() {
@@ -286,6 +288,52 @@ class App {
     t.classList.add('show');
     clearTimeout(this.toastT);
     this.toastT = setTimeout(() => t.classList.remove('show'), 2400);
+  }
+
+  updateHomeTiles() {
+    const c = this.career;
+    $('.hp-lv').textContent = c.level;
+    $('.hp-cr').textContent = money(c.credits);
+    $('.hp-st').textContent = c.totalStars;
+    $('.hp-xp i').style.width = `${Math.round(c.levelProgress * 100)}%`;
+    if (this.homeTilesDone) return;
+    this.homeTilesDone = true;
+    // hero renders of the game's own cars; deferred so the menu appears instantly
+    const shots = [
+      ['.t-career .t-img', { body: 'formula', paint: '#ff5a1f', accent: '#111418', livery: 'band', number: 1, finish: 'metallic' }, { yaw: 0.85, dist: 9 }],
+      ['.t-race .t-img', { ...this.setup }, { yaw: 0.7, dist: 8.2 }],
+      ['.t-control .t-img', { body: 'gt3', paint: '#e8d21d', accent: '#111418', livery: 'stripes', number: 33 }, { yaw: -0.75, dist: 8.2 }],
+    ];
+    let i = 0;
+    const next = () => {
+      if (i >= shots.length) return;
+      const [sel, setup, o] = shots[i++];
+      try { $(sel).src = carShot(setup, { w: 560, h: 315, ...o }); } catch (e) { console.warn(e); }
+      setTimeout(next, 30);
+    };
+    setTimeout(next, 200);
+    // studio tile: a hand-drawn circuit sketch
+    const cv = $('.t-studio .t-art');
+    const g = cv.getContext('2d');
+    const pts = (presetById('harbor') || PRESETS[0]).points;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const [x, y] of pts) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    const sc = Math.min(260 / (x1 - x0), 140 / (y1 - y0));
+    const ox = 240 - (x1 - x0) * sc / 2, oy = 28;
+    const P = pts.map(([x, y]) => [ox + (x - x0) * sc, oy + (y - y0) * sc]);
+    g.strokeStyle = 'rgba(74,168,255,0.12)'; g.lineWidth = 1;
+    for (let x = 0; x < 480; x += 24) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 300); g.stroke(); }
+    for (let y = 0; y < 300; y += 24) { g.beginPath(); g.moveTo(0, y); g.lineTo(480, y); g.stroke(); }
+    g.lineJoin = g.lineCap = 'round';
+    for (const [w, col] of [[14, 'rgba(0,0,0,0.35)'], [9, '#e8eef6'], [3, '#4aa8ff']]) {
+      g.strokeStyle = col; g.lineWidth = w; g.beginPath();
+      const n = P.length, mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      const m0 = mid(P[n - 1], P[0]); g.moveTo(m0[0], m0[1]);
+      for (let k = 0; k < n; k++) { const m = mid(P[k], P[(k + 1) % n]); g.quadraticCurveTo(P[k][0], P[k][1], m[0], m[1]); }
+      g.stroke();
+    }
+    const [sx, sy] = P[0];
+    g.fillStyle = '#ff5a1f'; g.beginPath(); g.arc(sx, sy, 7, 0, Math.PI * 2); g.fill();
   }
 
   updateHomeCard() {
@@ -679,9 +727,24 @@ class App {
         if (this.screen === 'race') return this.togglePause();
         if (this.screen === 'garage' || this.screen === 'reveal') return this.showHome();
       }
-      if (e.code === 'Enter' && this.screen === 'home' && $('#settings').hidden && $('#circuits').hidden) {
-        if ($('#modes').hidden) this.openOverlay('modes'); else this.startRace();
+      const homeOpen = this.screen === 'home' && $('#settings').hidden && $('#circuits').hidden && $('#modes').hidden && $('#rcsetup').hidden;
+      if (homeOpen && /^Arrow(Left|Right|Up|Down)$/.test(e.code)) {
+        const items = [...document.querySelectorAll('#home .tile, #home .h-sub button')];
+        let k = items.indexOf(document.activeElement);
+        if (k < 0) k = 0;
+        else if (e.code === 'ArrowRight') k = Math.min(items.length - 1, k + 1);
+        else if (e.code === 'ArrowLeft') k = Math.max(0, k - 1);
+        else if (e.code === 'ArrowDown') k = k < 4 ? 4 + Math.min(2, Math.floor(k * 0.75)) : k;
+        else if (e.code === 'ArrowUp') k = k >= 4 ? Math.min(3, Math.round((k - 4) * 1.5)) : k;
+        items[k].focus({ preventScroll: true });
+        audio.click?.();
         e.preventDefault();
+      }
+      if (e.code === 'Enter' && homeOpen && !document.activeElement?.closest('#home')) {
+        $('#home .tile')?.focus(); e.preventDefault();
+      }
+      if (e.code === 'Enter' && this.screen === 'home' && !$('#modes').hidden && !document.activeElement?.closest('#modes')) {
+        this.startRace(); e.preventDefault();
       }
       if (e.code === 'Enter' && this.screen === 'reveal') this.startRace();
     });

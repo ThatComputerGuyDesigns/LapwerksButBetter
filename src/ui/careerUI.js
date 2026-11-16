@@ -3,6 +3,10 @@ import { TIERS, EVENT_TYPES, CAR_PRICES, findEvent, eventTrackDef, className } f
 import { BODIES } from '../physics/carSetup.js';
 import { PRESETS } from '../track/presets.js';
 import { audio } from '../audio/audio.js';
+import { carShot } from './renders.js';
+
+const SHOT_PAINT = { formula: '#ff5a1f', proto: '#e9edf2', gt3: '#e8d21d', hyper: '#14224a', rs: '#b3121c', gt: '#ff5a1f', muscle: '#0f5c3a', jdm: '#e9edf2', rally: '#0f8a8c', hatch: '#b3121c' };
+export const showroomSetup = (id) => ({ body: id, paint: SHOT_PAINT[id] || '#ff5a1f', accent: '#111418', livery: id === 'formula' || id === 'proto' ? 'band' : 'stripes', number: 7, finish: 'metallic' });
 
 const stars = (n) => '★★★'.slice(0, n) + '☆☆☆'.slice(0, 3 - n);
 const money = (n) => `₡${Math.round(n).toLocaleString()}`;
@@ -52,8 +56,11 @@ export class CareerUI {
       body = `<div class="cr-dealer">${Object.values(BODIES).map((b) => {
         const owned = C.owns(b.id);
         const price = CAR_PRICES[b.id] ?? 0;
+        const pw = Math.min(1, b.powerKW / 750), lt = Math.min(1, 1 - (b.mass - 600) / 1400);
         return `<div class="cr-car ${owned ? 'owned' : ''}">
+          <div class="cr-shot"><img data-shot="${b.id}" alt="">${owned ? '<span class="cr-own">Owned</span>' : ''}</div>
           <em>${b.cls}</em><b>${b.name}</b>
+          <div class="cr-bars"><span>Power<i style="--v:${pw}"></i></span><span>Lightness<i style="--v:${lt}"></i></span></div>
           <small>${b.drivetrain} · ${Math.round(b.powerKW * 1.341)} hp · ${b.mass} kg</small>
           <p>${b.blurb}</p>
           ${owned ? `<button class="btn" data-drive-car="${b.id}">${this.app.setup.body === b.id ? 'Selected' : 'Select'}</button>` : `<button class="btn primary" data-buy="${b.id}" ${C.credits < price ? 'disabled' : ''}>Buy ${money(price)}</button>`}
@@ -61,6 +68,21 @@ export class CareerUI {
       }).join('')}</div>`;
     }
     this.root.innerHTML = `<div class="cr-wrap">${head}${body}</div><div class="cr-brief" hidden></div>`;
+    this.fillShots();
+  }
+
+  // render dealership hero shots a few at a time so the page never hitches
+  fillShots() {
+    const imgs = [...this.root.querySelectorAll('img[data-shot]')];
+    const tok = (this.shotTok = (this.shotTok || 0) + 1);
+    const step = () => {
+      if (tok !== this.shotTok) return;
+      const img = imgs.shift();
+      if (!img) return;
+      try { img.src = carShot(showroomSetup(img.dataset.shot), { w: 480, h: 240, yaw: 0.8, dist: 7.2 }); } catch (e) { console.warn(e); }
+      setTimeout(step, 16);
+    };
+    setTimeout(step, 60);
   }
 
   brief(eventId) {

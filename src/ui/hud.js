@@ -148,7 +148,8 @@ export class HUD {
         const lead = st[0].progress;
         const html = st.map((r, k) => {
           const gap = k === 0 ? 'Leader' : r.finished != null ? 'Finished' : `+${((lead - r.progress) / Math.max(session.car.speed, 25)).toFixed(1)}s`;
-          return `<div class="${r.isPlayer ? 'me' : ''}"><b>${k + 1}</b><i style="background:${r.paint}"></i><span>${r.name}</span><em>${gap}</em></div>`;
+          const nm = r.isPlayer ? 'YOU' : (r.name.split(' ').pop() || r.name).slice(0, 3).toUpperCase();
+          return `<div class="${r.isPlayer ? 'me' : ''}"><b>${k + 1}</b><i style="background:${r.paint}"></i><span>${nm}</span><em>${gap === 'Leader' ? 'LEADER' : gap === 'Finished' ? 'FIN' : gap}</em></div>`;
         }).join('');
         if (html !== this.lastBoard) { this.q('.board').innerHTML = html; this.lastBoard = html; }
       }

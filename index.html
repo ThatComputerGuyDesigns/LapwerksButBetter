@@ -21,53 +21,35 @@
 
     <!-- home -->
     <section id="home" class="screen home" hidden>
-      <div class="home-left">
+      <header class="h-top">
         <div class="brand">
           <div class="brand-mark"><i></i><i></i><i></i></div>
-          <div>
-            <h1>KERBSTONE</h1>
-            <p class="tag">Draw it. Build it. Race it.</p>
-          </div>
+          <div><h1>KERBSTONE</h1><p class="tag">Draw it. Build it. Race it.</p></div>
         </div>
-        <nav class="menu">
-          <button class="menu-item primary" data-go="career">
-            <svg viewBox="0 0 24 24"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4" /></svg>
-            <span><b>Career</b><small>Five championships, cars to earn</small></span>
-          </button>
-          <button class="menu-item" data-go="drive">
-            <svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z" /></svg>
-            <span><b>Quick race</b><small class="drive-sub">Current circuit</small></span>
-            <kbd>Enter</kbd>
-          </button>
-          <button class="menu-item" data-go="control">
-            <svg viewBox="0 0 24 24"><path d="M5 21V4M5 4h11l-2 4 2 4H5" /></svg>
-            <span><b>Race Control</b><small>Direct the race. Flags, safety car, penalties.</small></span>
-          </button>
-          <button class="menu-item" data-go="studio">
-            <svg viewBox="0 0 24 24"><path d="M4 20c4-1 6-3 8-7s4-7 8-8" /></svg>
-            <span><b>Track Studio</b><small>Draw a new circuit</small></span>
-          </button>
-          <button class="menu-item" data-go="garage">
-            <svg viewBox="0 0 24 24"><path d="M3 15l2-5h14l2 5v4H3z" /><circle cx="7.5" cy="17.5" r="1.5" /><circle cx="16.5" cy="17.5" r="1.5" /></svg>
-            <span><b>Garage</b><small>Build &amp; tune your car</small></span>
-          </button>
-          <button class="menu-item" data-go="circuits">
-            <svg viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="7" rx="1.5" /><rect x="14" y="4" width="7" height="7" rx="1.5" /><rect x="3" y="13" width="7" height="7" rx="1.5" /><rect x="14" y="13" width="7" height="7" rx="1.5" /></svg>
-            <span><b>Circuits</b><small>Presets, saved &amp; shared</small></span>
-          </button>
-          <button class="menu-item" data-go="settings">
-            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1" /></svg>
-            <span><b>Settings</b><small>Assists, controls, graphics</small></span>
-          </button>
-        </nav>
-      </div>
-      <div class="home-card glass">
+        <div class="h-profile" data-go="career" title="Your career">
+          <div class="hp-level"><b class="hp-lv">1</b><span>LEVEL</span></div>
+          <div class="hp-meta"><div class="hp-xp"><i></i></div><span><b class="hp-cr">₡10,000</b> · <b class="hp-st">0</b> ★</span></div>
+        </div>
+      </header>
+      <div class="h-feature">
         <span class="eyebrow">Now on track</span>
-        <h3 class="hc-name"></h3>
-        <canvas class="hc-thumb" width="220" height="140"></canvas>
+        <h2 class="hc-name"></h2>
         <div class="hc-stats"></div>
+        <canvas class="hc-thumb" width="220" height="140"></canvas>
       </div>
-      <div class="home-foot">v<span class="ver"></span> · Keyboard, gamepad &amp; touch</div>
+      <nav class="h-tiles">
+        <button class="tile t-career" data-go="career"><img alt="" class="t-img"><div class="t-txt"><span class="t-kicker">Career</span><b>World Series</b><small class="t-sub">Five championships. Cars to earn.</small></div><i class="t-bar"></i></button>
+        <button class="tile t-race" data-go="drive"><img alt="" class="t-img"><div class="t-txt"><span class="t-kicker">Quick race</span><b>Race now</b><small class="t-sub drive-sub">Harbor Sprint</small></div><i class="t-bar"></i></button>
+        <button class="tile t-control" data-go="control"><img alt="" class="t-img"><div class="t-txt"><span class="t-kicker">Race Control <em class="t-new">LIVE</em></span><b>Direct the race</b><small class="t-sub">Flags, safety car, stewards.</small></div><i class="t-bar"></i></button>
+        <button class="tile t-studio" data-go="studio"><canvas class="t-art" width="480" height="300"></canvas><div class="t-txt"><span class="t-kicker">Track Studio</span><b>Draw a circuit</b><small class="t-sub">Sketch it. Drive it in seconds.</small></div><i class="t-bar"></i></button>
+      </nav>
+      <nav class="h-sub">
+        <button data-go="garage"><svg viewBox="0 0 24 24"><path d="M3 15l2-5h14l2 5v4H3z" /><circle cx="7.5" cy="17.5" r="1.5" /><circle cx="16.5" cy="17.5" r="1.5" /></svg>Garage</button>
+        <button data-go="circuits"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="7" rx="1.5" /><rect x="14" y="4" width="7" height="7" rx="1.5" /><rect x="3" y="13" width="7" height="7" rx="1.5" /><rect x="14" y="13" width="7" height="7" rx="1.5" /></svg>Circuits</button>
+        <button data-go="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1" /></svg>Settings</button>
+        <span class="h-hint"><kbd>←</kbd><kbd>→</kbd> move · <kbd>Enter</kbd> select</span>
+        <span class="home-foot">v<span class="ver"></span></span>
+      </nav>
     </section>
 
     <!-- track studio -->
