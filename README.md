@@ -11,6 +11,16 @@ assets: every texture, model and sound is generated in code.
 ## What's in this build
 
 - **Race Control.** AI drivers race and you are the race director and stewards.
+  - **TV broadcast graphics:**
+    - a timing tower whose rows slide when positions change, with three-letter codes, team
+      colours, and gaps alternating between interval and gap-to-leader
+    - driver lower-thirds and battle-gap graphics
+    - Safety Car, VSC and fastest-lap banners
+    - race-control messages ("INCIDENT NOTED", "UNDER INVESTIGATION", penalty notices)
+    - live telemetry for the featured car
+    - press H for a clean TV view
+  - **Steward's desk:** case files with evidence (closing speed, overlap, braking, who moved
+    across), track-status alerts with one-click VSC or Safety Car, and 1×/2×/4× time.
   - **Incidents are detected automatically:** contacts (the simulation works out fault and
     severity, and checks whether the victim lost out), track-limit strikes, spins, and cars
     stopped on or off the track.

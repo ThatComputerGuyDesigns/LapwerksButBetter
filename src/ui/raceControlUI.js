@@ -4,6 +4,7 @@
 import { DECISIONS, FLAGS } from '../game/raceControl.js';
 import { formatTime } from '../core/math.js';
 import { audio } from '../audio/audio.js';
+import { Broadcast, code } from './broadcast.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const chip = (r) => `<span class="rc-chip"><i style="background:${r.setup.paint}"></i>#${r.setup.number} ${esc(r.name.split(' ').pop())}</span>`;
@@ -26,7 +27,7 @@ export class RaceControlUI {
         <button class="icon-btn rc-exit" title="Leave race control"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
       <div class="rc-alerts"></div>
-      <div class="rc-tower"></div>
+      <div class="bc"></div>
       <div class="rc-desk">
         <div class="rc-tabs"><button data-tab="cases" class="on">Cases <em class="rc-count"></em></button><button data-tab="decided">Decided</button><button data-tab="log">Log</button></div>
         <div class="rc-list"></div>
@@ -69,9 +70,10 @@ export class RaceControlUI {
       <div class="rc-shortcuts glass" hidden>
         <b>Shortcuts</b>
         <span><kbd>R</kbd> review next case</span><span><kbd>1</kbd>–<kbd>6</kbd> rulings in review</span><span><kbd>Space</kbd> play / pause replay</span>
-        <span><kbd>Esc</kbd> back to live</span><span><kbd>Tab</kbd> camera</span><span><kbd>F</kbd> time 1× / 2× / 4×</span><span><kbd>Y</kbd> yellow in the focused car's sector</span>
+        <span><kbd>H</kbd> clean TV view (hide the desk)</span><span><kbd>Esc</kbd> back to live</span><span><kbd>Tab</kbd> camera</span><span><kbd>F</kbd> time 1× / 2× / 4×</span><span><kbd>Y</kbd> yellow in the focused car's sector</span>
       </div>`;
     this.q = (s) => root.querySelector(s);
+    this.bc = new Broadcast(this.q('.bc'));
     this.bind();
   }
 
@@ -91,7 +93,7 @@ export class RaceControlUI {
       if (b.dataset.cam) { this.S.camMode = b.dataset.cam; this.S.camInit = false; this.S.shotT = 0; this.S.autoDirector = false; }
       this.render(true);
     });
-    r.querySelector('.rc-tower').addEventListener('click', (e) => {
+    r.querySelector('.bc').addEventListener('click', (e) => {
       const row = e.target.closest('[data-car]');
       if (!row || !this.S) return;
       audio.click();
@@ -161,6 +163,7 @@ export class RaceControlUI {
     if (e.code === 'Tab') { e.preventDefault(); S.cycleCamera(); S.autoDirector = false; S.shotT = 0; }
     if (e.code === 'KeyF') this.setSpeed(S.timeScale === 1 ? 2 : S.timeScale === 2 ? 4 : 1);
     if (e.code === 'KeyY') S.rc.setFlag('yellow', S.rc.sectorOf(S.car.q.s));
+    if (e.code === 'KeyH') this.root.classList.toggle('clean');
   }
 
   setSpeed(k) {
@@ -175,6 +178,9 @@ export class RaceControlUI {
     const res = this.S.rc.decide(inc.id, decId, target);
     if (res) {
       const d = DECISIONS.find((x) => x.id === decId);
+      const why = inc.type === 'limits' ? 'TRACK LIMITS' : 'CAUSING A COLLISION';
+      const carTxt = `CAR ${target.setup.number} (${code(target)})`;
+      this.bc.message(decId === 'nfa' ? `${inc.cars.map((c) => `CAR ${c.setup.number} (${code(c)})`).join(' AND ')} — NO FURTHER INVESTIGATION` : decId === 'warn' ? `BLACK AND WHITE FLAG FOR ${carTxt} — ${why}` : decId === 'dsq' ? `${carTxt} DISQUALIFIED — ${why}` : `${d.label.toUpperCase()} FOR ${carTxt} — ${why}`);
       this.message(`${d.label}${decId !== 'nfa' ? ` · #${target.setup.number} ${target.name}` : ''}`);
       audio.beep(decId === 'nfa' ? 660 : 880, 0.12, 0.12, 'triangle');
     }
@@ -184,6 +190,7 @@ export class RaceControlUI {
 
   openReview(inc) {
     this.S.openReview(inc);
+    if (isCase(inc) && inc.status === 'open' && !inc.investigating) { inc.investigating = true; this.bc.message(`${inc.cars.map((c) => `CAR ${c.setup.number} (${code(c)})`).join(' AND ')} — UNDER INVESTIGATION`); }
     this.culprit = inc.fault ? Math.max(0, inc.cars.indexOf(inc.fault)) : 0;
     this.q('.rv-title').textContent = `Case ${inc.id} · ${inc.title}`;
     this.q('.rv-sub').textContent = `Lap ${inc.lap} · Sector ${inc.sector + 1} · ${formatTime(inc.time).slice(0, -4)}`;
@@ -236,12 +243,20 @@ export class RaceControlUI {
     this.tickT = setTimeout(() => t.classList.remove('show'), 3200);
   }
 
-  incidentsChanged() { this.dirty = true; }
+  incidentsChanged(inc) {
+    this.dirty = true;
+    if (inc && isCase(inc)) this.bc.message(`${inc.title === 'Track limits' ? `CAR ${inc.cars[0].setup.number} (${code(inc.cars[0])}) — TRACK LIMITS NOTED` : `${inc.cars.map((c) => `CAR ${c.setup.number} (${code(c)})`).join(' AND ')} — INCIDENT NOTED`}`);
+    if (inc && inc.type === 'stopped' && inc.onTrack) this.bc.message(`CAR ${inc.cars[0].setup.number} (${code(inc.cars[0])}) STOPPED ON TRACK`);
+  }
 
   render(force) {
     const S = this.S;
     if (!S) return;
     this.frame = (this.frame || 0) + 1;
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - (this.lastT || now)) / 1000);
+    this.lastT = now;
+    if (S.field) this.bc.update(S, dt);
     const RC = S.rc, F = S.field;
     if (S.review) {
       const R = S.review;
@@ -263,19 +278,6 @@ export class RaceControlUI {
     this.q('.rc-score').innerHTML = `<b>${rep.grade}</b><span>Rulings ${rep.correct}/${rep.decisions}</span><span>Safety ${Math.round(rep.safety)}%</span>`;
     this.root.querySelectorAll('[data-auto]').forEach((b) => b.classList.toggle('on', S.autoDirector));
     this.root.querySelectorAll('[data-cam]').forEach((b) => b.classList.toggle('on', !S.autoDirector && b.dataset.cam === S.camMode));
-    // tower
-    const L = this.app.track.length;
-    let html = '';
-    order.forEach((r, k) => {
-      const idx = F.cars.indexOf(r);
-      let gap;
-      if (k === 0) gap = r.finished != null ? 'FIN' : 'LEAD';
-      else if (r.dsq) gap = 'DSQ';
-      else { const g = F.rank(order[k - 1]) - F.rank(r); gap = g > L ? `+${Math.floor(g / L)}L` : `+${(g / Math.max(r.car.u, 20)).toFixed(1)}`; }
-      const tags = `${r.penalty ? `<em class="pen">+${r.penalty}s</em>` : ''}${r.warnings ? `<em class="warn">W</em>` : ''}${r.stoppedT > 1 ? '<em class="stop">STOP</em>' : ''}`;
-      html += `<div data-car="${idx}" class="${r === S.focus ? 'focus' : ''} ${r.dsq ? 'dsq' : ''}"><b>${k + 1}</b><i style="background:${r.setup.paint}"></i><span>${esc(r.name)}</span>${tags}<small>${gap}</small></div>`;
-    });
-    if (html !== this.lastTower) { this.q('.rc-tower').innerHTML = html; this.lastTower = html; }
     // track-status alerts (stopped cars, uncovered danger) with one-click responses
     const alerts = RC.incidents.filter((i) => i.type === 'stopped' && i.status === 'open' && !this.dismissed.has(i.id)).slice(0, 2);
     const ah = alerts.map((i) => {

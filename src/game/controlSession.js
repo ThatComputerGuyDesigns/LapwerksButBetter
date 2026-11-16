@@ -144,7 +144,7 @@ export class ControlSession extends DriveSession {
 
   onIncident(inc) {
     audio.beep(inc.severity >= 2 ? 660 : 520, 0.12, 0.12, 'triangle');
-    this.app.rcui?.incidentsChanged();
+    this.app.rcui?.incidentsChanged(inc);
     // no forced camera cut: the steward desk raises it; you decide when to look
   }
 

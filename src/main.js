@@ -486,6 +486,8 @@ class App {
     const C = this.settings.rc;
     const bodies = { hatch: ['hatch', 'jdm', 'rally'], club: ['gt', 'muscle', 'rs', 'jdm'], gt: ['gt3', 'hyper', 'rs'], proto: ['proto', 'hyper'], formula: ['formula'] }[C.cls] || ['gt3'];
     this.setup = { ...this.setup, body: bodies[0], compound: 'sport' };
+    this.rcui.bc.reset();
+    this.rcui.root.classList.remove('clean', 'reviewing');
     this.session = new ControlSession(this, { cars: C.cars, laps: C.laps, bodies, drama: C.drama });
     $('#rc').hidden = false;
     this.rcui.render(true);
