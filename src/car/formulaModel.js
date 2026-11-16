@@ -105,7 +105,7 @@ export function createFormula(setup, B) {
     ep.position.set(sx * 0.505, -0.12, -0.02);
     rw.add(ep);
   }
-  rw.rotation.x = -0.06 - (setup.downforce ?? 0.5) * 0.15;
+  rw.rotation.x = -0.06 - (setup.rearWing ?? 0.5) * 0.15;
   rw.position.set(0, 0.95, zR + 0.2);
   body.add(rw);
   const pylon = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.5, 0.2), carbon);

@@ -363,7 +363,7 @@ export function createCar(setup) {
       wing.add(sp);
       wing.position.set(0, C.roof - 0.02, zOf(C.t0) + 0.12);
     }
-    wing.rotation.x = -0.08 - (setup.downforce ?? 0.5) * 0.18;
+    wing.rotation.x = -0.08 - (setup.rearWing ?? 0.5) * 0.18;
     body.add(wing);
     if (P.scoop) {
       const sc = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.08, 0.35), accentMat);

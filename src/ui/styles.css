@@ -919,3 +919,27 @@ h1, h2, h3, .menu-item b, .tile b, .panel h2, .garage-top h2, .cr-title h2 { fon
 .ch-box > b { font: 900 24px var(--display); text-transform: uppercase; font-stretch: 82%; }
 .ch-box small { color: var(--muted); font-size: 12.5px; }
 .res-table.compact > div:nth-child(n+4):not(.me) { display: none; }
+
+/* ---------- garage v2 */
+.garage-panel .tabs { grid-template-columns: repeat(5, 1fr) !important; }
+.garage-panel .tabs button { font-size: 12px; padding-left: 0; padding-right: 0; }
+.g-curve { width: 100%; height: auto; aspect-ratio: 680 / 300; border-radius: 10px; background: rgba(0,0,0,0.3); }
+.g-curve-legend { display: flex; align-items: center; gap: 14px; font-size: 12px; color: var(--muted); margin-top: -6px; }
+.g-curve-legend span::before { content: ''; display: inline-block; width: 14px; height: 3px; margin-right: 6px; vertical-align: middle; border-radius: 2px; }
+.g-curve-legend .tq::before { background: #4aa8ff; }
+.g-curve-legend .pw::before { background: #ff7a3d; }
+.g-curve-legend b { margin-left: auto; font: 700 12px var(--display); color: var(--text); }
+.g-aero { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.g-aero div { position: relative; display: flex; flex-direction: column; gap: 2px; padding: 9px 11px; border-radius: 9px; background: rgba(255,255,255,0.04); }
+.g-aero span { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
+.g-aero b { font: 800 18px var(--display); }
+.g-bal { position: relative; height: 4px; margin-top: 4px; border-radius: 2px; background: linear-gradient(90deg, #4aa8ff, #3ddc84 50%, #ff7a3d); }
+.g-bal em { position: absolute; top: -4px; width: 4px; height: 12px; margin-left: -2px; border-radius: 2px; background: #fff; }
+[data-tunnel].on { background: #4aa8ff; color: #04111f; border-color: transparent; }
+.g-text { width: 100%; height: 38px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line-2); background: rgba(0,0,0,0.3); color: var(--text); font: 800 italic 15px var(--display); letter-spacing: 0.04em; text-transform: uppercase; outline: none; }
+.g-text:focus { border-color: var(--accent); }
+.g-logo { display: flex; align-items: center; gap: 8px; }
+.g-logo img { width: 44px; height: 44px; object-fit: contain; border-radius: 8px; background: rgba(255,255,255,0.08); }
+.g-logo i { font-size: 12px; color: var(--dim); font-style: normal; }
+.garage-panel .tab-body { min-height: 0; }
+.garage-panel .stats { flex: none; gap: 5px; padding: 10px 12px; }

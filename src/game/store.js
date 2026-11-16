@@ -21,7 +21,7 @@ export const store = {
   },
   deleteTrack(id) { set('tracks', this.tracks().filter((t) => t.id !== id)); },
   carKey(setup) {
-    return [setup.body, setup.compound, Math.round(setup.powerScale * 100), Math.round(setup.weightScale * 100), Math.round(setup.downforce * 100), setup.drivetrain || ''].join('-');
+    return [setup.body, setup.compound, Math.round(setup.powerScale * 100), Math.round(setup.weightScale * 100), Math.round((setup.rearWing ?? 0.5) * 100), Math.round((setup.frontWing ?? 0.5) * 100), Math.round((setup.turbo || 0) * 10), setup.revLimit || 0, setup.drivetrain || ''].join('-');
   },
   getBest(trackKey, setup) { return get(`best.${trackKey}.${this.carKey(setup)}`, null); },
   setBest(trackKey, setup, best) {

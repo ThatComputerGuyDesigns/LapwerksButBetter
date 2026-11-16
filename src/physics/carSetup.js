@@ -1,6 +1,8 @@
 // Car bodies, tire compounds and the tuning model that turns garage choices
 // into physical parameters. Pure data — used by the sim, the garage and the AI.
 
+import { clamp } from '../core/math.js';
+
 // Real-world car archetypes with true-to-life figures (original names).
 // model: visual builder / profile; cls: garage category; gears: count;
 // compound: default tyres; grip: chassis grip multiplier (aero-optimised
@@ -107,7 +109,25 @@ export const DEFAULT_SETUP = {
   finalDrive: 1.0, // 0.85 .. 1.15 multiplier (short/long)
   steerLock: 1.0, // 0.8 .. 1.2
   drivetrain: null, // null = body default
+  // detailed aero (0..1 each; 0.5 everywhere = the body's stock package)
+  frontWing: 0.5, rearWing: 0.5, splitter: 0.5, underfloor: 0.5,
+  // engine
+  turbo: 0, // boost in bar (0 = as built)
+  revLimit: 0, // rpm added to the stock redline
+  weightShift: 0, // engine placement: front weight share offset (-0.08..0.08)
+  cylinders: null, // null = body default (sound + torque character)
+  sponsor: '', // livery sponsor text
+  logo: null, // livery logo (data URL)
 };
+
+/** Aero package → lift/drag multipliers and front balance offset. */
+export function aeroOf(s) {
+  const fw = s.frontWing ?? 0.5, rw = s.rearWing ?? 0.5, sp = s.splitter ?? 0.5, uf = s.underfloor ?? 0.5;
+  const cl = 0.45 + 0.35 * fw + 0.45 * rw + 0.2 * sp + 0.1 * uf; // 1.0 at stock
+  const cd = 1 + 0.1 * (fw - 0.5) + 0.22 * (rw - 0.5) + 0.05 * (sp - 0.5) - 0.04 * (uf - 0.5);
+  const bal = 0.1 * (fw - 0.5) + 0.06 * (sp - 0.5) - 0.1 * (rw - 0.5) + 0.02 * (uf - 0.5);
+  return { cl, cd, bal };
+}
 
 /**
  * Gameplay grip level (set from the app settings). 'arcade' turns sharper and
@@ -128,26 +148,29 @@ export function makeCarParams(setup = DEFAULT_SETUP) {
   const B = BODIES[s.body] || BODIES.gt;
   const C = COMPOUNDS[s.compound] || COMPOUNDS.sport;
   const mass = B.mass * s.weightScale;
-  const wingCl = 0.45 + s.downforce * 1.1; // multiplier on body downforce
-  const clA = B.clA * wingCl;
-  const cdA = B.cdA * (1 + (wingCl - 1) * 0.12);
-  const redline = B.redline;
+  const A = aeroOf(s);
+  const clA = B.clA * A.cl;
+  const cdA = B.cdA * A.cd;
+  const redline = B.redline + (s.revLimit || 0);
+  // revving higher makes more peak power; boost makes a lot more
+  const powerKW = B.powerKW * s.powerScale * (1 + 0.5 * ((s.revLimit || 0) / B.redline)) * (1 + 0.3 * (s.turbo || 0));
+  const weightFront = clamp(B.weightFront + (s.weightShift || 0), 0.3, 0.65);
   // gearbox: geometric ratios; final drive chosen so top gear tops out at
   // the drag-limited top speed (so every car pulls to redline in top)
   const n = B.gears;
   const top = 0.82;
   const gears = Array.from({ length: n }, (_, k) => B.first * Math.pow(top / B.first, Math.pow(k / (n - 1), 0.9)));
-  const P = B.powerKW * s.powerScale * 1000 * 0.86;
+  const P = powerKW * 1000 * 0.86;
   const vTop = Math.cbrt(P / (0.5 * 1.225 * cdA)) * 1.02;
   const finalBase = ((redline * Math.PI) / 30) * B.wheelR / (vTop * top);
   return {
     setup: s,
     body: B,
     mass,
-    inertia: mass * B.wheelbase * B.wheelbase * B.weightFront * (1 - B.weightFront) * 1.12, // yaw inertia ≈ m·a·b
+    inertia: mass * B.wheelbase * B.wheelbase * weightFront * (1 - weightFront) * 1.12, // yaw inertia ≈ m·a·b
     wheelbase: B.wheelbase,
-    a: B.wheelbase * (1 - B.weightFront),
-    b: B.wheelbase * B.weightFront,
+    a: B.wheelbase * (1 - weightFront),
+    b: B.wheelbase * weightFront,
     cgHeight: B.cgHeight * GAMEPLAY.transfer,
     heatScale: 1 / GAMEPLAY.grip,
     lockSteer: GAMEPLAY.lockSteer || 0,
@@ -157,7 +180,9 @@ export function makeCarParams(setup = DEFAULT_SETUP) {
     wheelInertia: 1.15,
     drivetrain: s.drivetrain || B.drivetrain,
     engine: {
-      powerKW: B.powerKW * s.powerScale,
+      powerKW,
+      turbo: s.turbo || 0,
+      cyl: s.cylinders || B.cyl || 6,
       redline,
       idle: 950,
       limiter: redline + 150,
@@ -169,7 +194,7 @@ export function makeCarParams(setup = DEFAULT_SETUP) {
     shiftTime: 0.11,
     // arcade grip boosts the tyres; aero grip is scaled back so high-downforce
     // cars don't stack to absurd corner speeds
-    aero: { cdA, clA: clA / Math.sqrt(GAMEPLAY.grip), balance: B.aeroBalance + s.aeroBalance },
+    aero: { cdA, clA: clA / Math.sqrt(GAMEPLAY.grip), balance: B.aeroBalance + s.aeroBalance + A.bal },
     tire: { ...C, mu: C.mu * B.grip * GAMEPLAY.grip },
     brake: { maxTorque: mass * 9.81 * 1.55 * B.wheelR * GAMEPLAY.brake * Math.max(1, C.mu * B.grip * GAMEPLAY.grip / 1.2), bias: B.brakeBias + s.brakeBias, handbrake: 2600 },
     diffLock: s.diffLock,
@@ -180,10 +205,34 @@ export function makeCarParams(setup = DEFAULT_SETUP) {
   };
 }
 
+function torqueShape(x, b) {
+  let shape = 0.52 + 1.4 * x - 1.02 * x * x; // peaks ~0.69 · redline
+  if (b > 0) {
+    // turbo: little boost low down, a fat mid-range plateau, tailing off at the top
+    const spool = Math.min(1, Math.max(0, (x - 0.22) / 0.25));
+    const boosted = 0.6 + 0.62 * Math.min(1, x / 0.45) - 0.35 * Math.max(0, x - 0.75);
+    shape = shape * (1 - spool) + Math.max(shape, boosted) * spool;
+  }
+  return shape;
+}
+const normCache = new Map();
+/** Scale so the curve's peak power matches the rated figure whatever the boost. */
+function shapeNorm(b) {
+  if (!b) return 1;
+  const key = Math.round(b * 100);
+  if (normCache.has(key)) return normCache.get(key);
+  let p0 = 0, p1 = 0;
+  for (let x = 0.1; x <= 1.05; x += 0.005) { p0 = Math.max(p0, torqueShape(x, 0) * x); p1 = Math.max(p1, torqueShape(x, b) * x); }
+  const n = p0 / p1;
+  normCache.set(key, n);
+  return n;
+}
+
 /** Engine torque (Nm) at rpm for full throttle. */
 export function engineTorque(engine, rpm) {
   const x = Math.min(rpm / engine.redline, 1.05);
-  const shape = 0.52 + 1.4 * x - 1.02 * x * x; // peaks ~0.69 · redline
+  const b = engine.turbo || 0;
+  const shape = torqueShape(x, b) * shapeNorm(b);
   const omegaRed = (engine.redline * Math.PI) / 30;
   const Tmax = (engine.powerKW * 1000) / (0.9 * omegaRed);
   return Math.max(0, shape) * Tmax;

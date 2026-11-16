@@ -187,5 +187,17 @@ for (const [a, min] of [['casual', 45], ['sport', 35], ['pro', 15]]) {
   check(ch.done && ch.points.You === 25 + 1 + 1 && st.length === 10 && st[0].pts >= st[9].pts, `championship scoring (You ${ch.points.You} pts, leader ${st[0].name} ${st[0].pts})`);
 }
 
+// 8. garage v2: turbo adds mid-range torque at the rated peak power; wings trade drag for downforce
+{
+  const { makeCarParams: mk, engineTorque: et } = await import('../src/physics/carSetup.js');
+  const peak = (p) => { let m = 0; for (let r = 1000; r <= p.engine.limiter; r += 25) m = Math.max(m, (et(p.engine, r) * r * Math.PI) / 30 / 1000); return m; };
+  const na = mk({ body: 'gt' }), tb = mk({ body: 'gt', turbo: 1 });
+  check(Math.abs(peak(tb) - tb.engine.powerKW) / tb.engine.powerKW < 0.03 && et(tb.engine, 3800) > et(na.engine, 3800) * 1.15, `turbo: ${Math.round(peak(tb) * 1.341)} hp peak, mid-range torque ${Math.round(et(tb.engine, 3800))} vs ${Math.round(et(na.engine, 3800))} Nm`);
+  const lo = mk({ body: 'gt3', rearWing: 0, frontWing: 0 }), hi = mk({ body: 'gt3', rearWing: 1, frontWing: 1 });
+  check(hi.aero.clA > lo.aero.clA * 1.5 && hi.aero.cdA > lo.aero.cdA, 'wings add downforce and drag');
+  const fw = mk({ body: 'gt3', frontWing: 1, rearWing: 0.3 });
+  check(fw.aero.balance > mk({ body: 'gt3' }).aero.balance, 'front wing moves aero balance forward');
+}
+
 console.log(failed ? `\n${failed} check(s) failed` : '\nall checks passed');
 process.exit(failed ? 1 : 0);

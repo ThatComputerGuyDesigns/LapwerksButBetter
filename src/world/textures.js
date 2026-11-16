@@ -310,8 +310,9 @@ export function liveryTexture(setup) {
 
   // number roundels on both doors
   const num = String(setup.number ?? 7);
+  const lift = (setup.sponsor || '').trim() ? 0.012 : 0;
   for (const v of [0.25, 0.75]) {
-    const cx = W * 0.47, cy = H * v;
+    const cx = W * 0.47, cy = H * (v < 0.5 ? v + lift : v - lift);
     ctx.save();
     ctx.translate(cx, cy);
     // texture v runs around the body: mirror per side so it reads correctly
@@ -328,8 +329,50 @@ export function liveryTexture(setup) {
     ctx.fillText(num, 0, 1);
     ctx.restore();
   }
+  // sponsor text on the front wings and a logo on the rear quarters
+  const decal = (u, v, draw) => {
+    ctx.save();
+    ctx.translate(W * u, H * v);
+    if (v < 0.5) ctx.scale(1, -0.5); else ctx.scale(-1, 0.5);
+    draw();
+    ctx.restore();
+  };
+  const sponsor = (setup.sponsor || '').trim().slice(0, 18);
+  if (sponsor) {
+    // door, under the number (row 0.25 is drawn flipped, so "down" differs per side)
+    for (const v of [0.198, 0.802]) decal(0.49, v, () => {
+      ctx.font = '900 italic 30px "Saira Variable", system-ui, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillText(sponsor, 2, 3, 240);
+      ctx.fillStyle = contrastOn(setup.paint);
+      ctx.fillText(sponsor, 0, 0, 240);
+    });
+  }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = maxAniso;
+  if (setup.logo) {
+    const img = logoImage(setup.logo);
+    const paint = () => {
+      for (const v of [0.288, 0.712]) decal(0.225, v, () => {
+        const k = Math.min(120 / img.width, 84 / img.height);
+        ctx.drawImage(img, (-img.width * k) / 2, (-img.height * k) / 2, img.width * k, img.height * k);
+      });
+      t.needsUpdate = true;
+    };
+    if (img.complete && img.naturalWidth) paint(); else img.addEventListener('load', paint, { once: true });
+  }
   return t;
+}
+
+const logoCache = new Map();
+function logoImage(url) {
+  if (!logoCache.has(url)) { const im = new Image(); im.src = url; logoCache.set(url, im); }
+  return logoCache.get(url);
+}
+/** Black or white, whichever reads better on a paint colour. */
+function contrastOn(hex) {
+  const c = new THREE.Color(hex);
+  return 0.3 * c.r + 0.59 * c.g + 0.11 * c.b > 0.55 ? '#111318' : '#ffffff';
 }

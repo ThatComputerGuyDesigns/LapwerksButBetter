@@ -48,7 +48,7 @@ function init() {
  */
 export function carShot(setup, { w = 640, h = 360, yaw = 0.75, pitch = 0.16, dist = 9.5, lookY = 0.5, key = '' } = {}) {
   const s = { ...DEFAULT_SETUP, ...setup };
-  const id = `${s.body}|${s.paint}|${s.accent}|${s.livery}|${s.number}|${s.finish}|${w}x${h}|${yaw}|${pitch}|${dist}|${key}`;
+  const id = `${s.body}|${s.paint}|${s.accent}|${s.livery}|${s.number}|${s.finish}|${s.sponsor || ""}|${(s.logo || "").length}|${s.frontWing}|${s.rearWing}|${w}x${h}|${yaw}|${pitch}|${dist}|${key}`;
   if (cache.has(id)) return cache.get(id);
   const { renderer, scene, camera } = init();
   renderer.setSize(w, h, false);
